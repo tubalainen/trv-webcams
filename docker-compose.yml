@@ -1,0 +1,24 @@
+services:
+  trv-webcams:
+    image: ghcr.io/tubalainen/trv-webcams:latest
+    build: .
+    container_name: trv-webcams
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8933}:8933"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data
+    # NVIDIA GPU (requires NVIDIA Container Toolkit on the host).
+    # Remove this block to run on CPU only.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # Intel/AMD VAAPI instead: remove the deploy block above and uncomment:
+    # devices:
+    #   - /dev/dri:/dev/dri

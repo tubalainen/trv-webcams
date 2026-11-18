@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kamera – TRV Webbkameror</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./">← Alla kameror</a>
+    <div id="status" class="status"></div>
+  </header>
+
+  <main class="camera-page">
+    <div class="cam-head">
+      <div>
+        <h1 id="camName">Laddar…</h1>
+        <p class="muted" id="camMeta"></p>
+      </div>
+      <label class="switch big">
+        <input type="checkbox" id="enabled">
+        <span class="slider"></span>
+        <span class="switch-label" id="enabledLabel">Aktiv</span>
+      </label>
+    </div>
+
+    <div class="cam-grid">
+      <figure class="card">
+        <img id="latest" alt="Senaste bild">
+        <figcaption class="muted" id="latestCaption"></figcaption>
+      </figure>
+      <div class="card">
+        <h2>Generera timelapse</h2>
+        <p class="muted">Timelapses genereras automatiskt varje natt för aktiva kameror.
+          Du kan också generera dem direkt.</p>
+        <div id="periodChecks" class="period-checks"></div>
+        <button id="generate" class="btn">Generera timelapse</button>
+        <div id="jobStatus" class="job-status"></div>
+        <div id="miniMap" class="mini-map"></div>
+      </div>
+    </div>
+
+    <h2>Timelapses</h2>
+    <div class="tabs" id="tabs" role="tablist"></div>
+    <div id="clip" class="card clip"></div>
+  </main>
+
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="common.js"></script>
+  <script src="camera.js"></script>
+</body>
+</html>

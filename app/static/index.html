@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TRV Webbkameror</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="vendor/markercluster/MarkerCluster.css">
+  <link rel="stylesheet" href="vendor/markercluster/MarkerCluster.Default.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./">📷 TRV Webbkameror</a>
+    <div id="status" class="status">Laddar status…</div>
+  </header>
+
+  <main class="layout">
+    <section class="sidebar">
+      <div class="filters">
+        <input id="search" type="search" placeholder="Sök kamera…" aria-label="Sök kamera">
+        <select id="county" aria-label="Län"><option value="">Alla län</option></select>
+        <label class="check"><input id="onlyEnabled" type="checkbox"> Endast aktiva</label>
+      </div>
+      <div class="bulk" id="bulk" hidden>
+        <span id="bulkLabel"></span>
+        <button id="bulkOn" class="btn small">Aktivera alla i länet</button>
+        <button id="bulkOff" class="btn small ghost">Avaktivera alla i länet</button>
+      </div>
+      <div class="count" id="count"></div>
+      <ul id="list" class="cam-list" aria-label="Kameror"></ul>
+    </section>
+    <section class="map-wrap">
+      <div id="map"></div>
+      <div class="legend">
+        <span><i class="dot on"></i> Aktiv (sparar bilder)</span>
+        <span><i class="dot off"></i> Inaktiv</span>
+      </div>
+    </section>
+  </main>
+
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="vendor/markercluster/leaflet.markercluster.js"></script>
+  <script src="common.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
