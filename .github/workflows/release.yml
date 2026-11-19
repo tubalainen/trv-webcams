@@ -2,6 +2,8 @@ name: Release image
 
 # Publishes the container image to ghcr.io.
 # - push to main            -> :edge, :sha-<short>
+#   and, if the version in app/__init__.py has no vX.Y.Z tag yet, a full release:
+#   :X.Y.Z, :X.Y, :latest + tag vX.Y.Z + GitHub release (bump the version to release)
 # - tag vX.Y.Z pushed       -> :X.Y.Z, :X.Y, :latest (+ GitHub release if missing)
 # - "Run workflow" with a version (e.g. 0.2.0) on main
 #                           -> builds and pushes :X.Y.Z, :X.Y, :latest, then creates
@@ -60,6 +62,14 @@ jobs:
             tag="${GITHUB_REF_NAME}"
             echo "release=true" >> "$GITHUB_OUTPUT"
             echo "create_tag=false" >> "$GITHUB_OUTPUT"
+          elif [ "${GITHUB_REF}" = "refs/heads/main" ] && \
+               version=$(sed -nE 's/^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' app/__init__.py) && \
+               [ -n "${version}" ] && \
+               ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${version}" >/dev/null 2>&1; then
+            # Version bump on main without a matching tag -> release it
+            tag="v${version}"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "create_tag=true" >> "$GITHUB_OUTPUT"
           else
             tag=""
             echo "release=false" >> "$GITHUB_OUTPUT"

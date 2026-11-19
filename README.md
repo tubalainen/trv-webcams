@@ -103,6 +103,7 @@ DATA_DIR=./data python -m app.main
   - en release ger taggarna `X.Y.Z`, `X.Y` och `latest`
 
   En release görs på något av dessa sätt:
+  - **Höj versionen** i `app/__init__.py` (och `pyproject.toml`) och merga till `main`. Om taggen `vX.Y.Z` inte finns bygger workflowet imagen, skapar taggen och en GitHub-release med genererade release notes.
   - **Actions → Release image → Run workflow** på `main`, med versionen (t.ex. `0.2.0`) som input. Workflowet bygger och publicerar imagen och skapar sedan taggen `vX.Y.Z` och en GitHub-release med genererade release notes.
   - Pusha en tagg; GitHub-releasen skapas då automatiskt om den saknas:
 
