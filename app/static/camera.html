@@ -45,10 +45,7 @@
         </figcaption>
       </figure>
       <div class="card">
-        <h2>Generera timelapse</h2>
-        <p class="muted">Timelapses genereras automatiskt varje natt för aktiva kameror.
-          Du kan också generera dem direkt.</p>
-        <div id="periodChecks" class="period-checks"></div>
+        <h2>Inställningar för kameran</h2>
         <div class="cam-settings">
           <label class="field">
             <span>Temperaturgraf (vägtemperatur)</span>
@@ -61,15 +58,20 @@
           </label>
           <p class="muted" id="resInfo"></p>
         </div>
-        <button id="generate" class="btn">Generera timelapse</button>
-        <div id="jobStatus" class="job-status"></div>
         <div id="miniMap" class="mini-map"></div>
       </div>
     </div>
 
-    <h2>Timelapses</h2>
-    <div class="tabs" id="tabs" role="tablist"></div>
-    <div id="clip" class="card clip"></div>
+    <section class="card gen-card">
+      <h2>Generera timelapse</h2>
+      <p class="muted">Välj ett förval eller ett tidsspann i kalendern, format och längd, och tryck på
+        <b>Generera</b>. Klippet hamnar i biblioteket nedan.</p>
+      <div id="generator"></div>
+      <div id="jobStatus" class="job-status"></div>
+    </section>
+
+    <h2>Klipp</h2>
+    <div id="clips" class="clip-list"></div>
 
     <section class="card cam-admin" id="camAdmin" hidden>
       <h2>Radera för kameran</h2>
@@ -87,6 +89,7 @@
 
   <script src="vendor/leaflet/leaflet.js"></script>
   <script src="common.js"></script>
+  <script src="generate.js"></script>
   <script src="camera.js"></script>
 </body>
 </html>

@@ -78,15 +78,10 @@ a { color: var(--accent); }
 .badge.on { border-color: var(--on); color: var(--on); }
 .topbar nav { display: flex; gap: 14px; align-items: center; }
 .topbar nav a { text-decoration: none; }
-.period-checks { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 14px; }
 .job-status { margin-top: 10px; font-size: .92em; }
 .job-status pre { white-space: pre-wrap; font-size: .85em; background: var(--tab); padding: 8px; border-radius: 6px; }
 .job-status.failed b { color: var(--warn); } .job-status.done b { color: var(--on); }
 .mini-map { height: 160px; margin-top: 12px; border-radius: 6px; }
-.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
-.tab { padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--tab); color: var(--muted); cursor: pointer; font: inherit; }
-.tab.has { color: var(--text); }
-.tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 .clip-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .clip h3 { margin: 0 0 8px; font-size: 1em; }
 
@@ -147,3 +142,49 @@ a { color: var(--accent); }
 .cam-admin { margin-top: 16px; }
 .cam-admin h2 { margin-top: 0; font-size: 1.1em; }
 .admin-hint { margin-top: 14px; }
+
+/* Generate dialog and calendar */
+.gen-card { margin: 16px 0; }
+.gen-card h2 { margin-top: 0; }
+.generator { display: grid; gap: 12px; }
+.gen-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.cal { border: 1px solid var(--border); border-radius: 8px; padding: 10px; max-width: 360px; }
+.cal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.cal-title { font-weight: 600; text-transform: capitalize; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.cal-wd { text-align: center; font-size: .75em; color: var(--muted); padding: 2px 0; }
+.cal-day { aspect-ratio: 1; border: 1px solid transparent; border-radius: 6px; background: transparent;
+  color: var(--text); font: inherit; font-size: .88em; cursor: pointer; position: relative; }
+.cal-day:hover:not(:disabled) { border-color: var(--accent); }
+.cal-day:disabled { color: var(--muted); opacity: .4; cursor: default; }
+.cal-day.snap { background: color-mix(in srgb, var(--on) 30%, transparent); }
+.cal-day.arch { background: color-mix(in srgb, var(--on) 12%, transparent); }
+.cal-day.in-range { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: -2px; }
+.cal-day.start, .cal-day.end { background: var(--accent); color: #fff; }
+.cal-day.today { font-weight: 700; }
+.cal-legend { display: flex; gap: 14px; margin-top: 6px; font-size: .8em; }
+.cal-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; }
+.cal-dot.snap { background: color-mix(in srgb, var(--on) 30%, transparent); }
+.cal-dot.arch { background: color-mix(in srgb, var(--on) 12%, transparent); border: 1px solid var(--border); }
+.gen-times, .gen-opts { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: end; }
+.gen-dt { display: flex; gap: 8px; align-items: center; font-weight: 400; }
+.gen-formats { border: 0; padding: 0; margin: 0; display: flex; gap: 12px; align-items: center; }
+.gen-formats legend { font-weight: 500; padding: 0; margin-bottom: 4px; }
+.gen-summary { margin: 0; }
+.gen-result { font-size: .92em; }
+.gen-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px;
+  border-bottom: 1px solid var(--border); }
+.gen-dialog { max-width: 560px; width: calc(100% - 32px); border: 1px solid var(--border); border-radius: 10px;
+  background: var(--panel); color: var(--text); padding: 18px; }
+.gen-dialog::backdrop { background: rgb(0 0 0 / .45); }
+.gen-dialog h2 { margin: 0 0 6px; font-size: 1.15em; }
+.dialog-close { float: right; }
+
+/* Clip library */
+.clip-list { display: grid; gap: 10px; }
+.clip-item { padding: 10px 14px; }
+.clip-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.clip-title { font-weight: 600; text-decoration: none; }
+.clip-head .clip-del { margin-left: auto; }
+.clip-item .clip-grid { margin-top: 10px; }
+.clip-item video, .clip-item img { width: 100%; border-radius: 6px; display: block; background: #000; margin-bottom: 6px; }

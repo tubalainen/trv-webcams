@@ -1,9 +1,10 @@
 /* Camera detail page */
 const camId = new URLSearchParams(location.search).get("id");
-let periods = [];
 let cam = null;
-let activePeriod = "1d";
+let clips = [];
+let openClip = null;
 let pollTimer = null;
+let generator = null;
 
 // Snapshot browser. `shot` is null while showing the live/latest image.
 const snaps = { days: [], day: null, frames: [], idx: -1 };
@@ -12,50 +13,53 @@ let isAdmin = false;
 
 const $ = (id) => document.getElementById(id);
 
-function renderClip() {
-  const tl = cam.timelapses[activePeriod];
-  const label = periods.find((p) => p.key === activePeriod)?.label ?? activePeriod;
-  if (!tl) {
-    $("clip").innerHTML = `<p class="muted">Ingen timelapse för ${esc(label)} ännu.
-      ${cam.enabled ? "Den skapas i nattkörningen, eller tryck på <b>Generera timelapse</b>." :
-        "Aktivera kameran för att börja spara bilder."}</p>`;
+const fmtRange = (c) => `${fmtTime(c.range_start)} – ${fmtTime(c.range_end)}`;
+
+function renderClips() {
+  if (!clips.length) {
+    $("clips").innerHTML = `<p class="muted card">Inga klipp ännu. ${cam.enabled || cam.snapshot_count ?
+      "Välj tidsspann ovan och tryck på <b>Generera</b>." : "Aktivera kameran för att börja spara bilder."}</p>`;
     return;
   }
-  const mp4 = tl.mp4, gif = tl.gif;
-  const meta = (t) => t ? `${t.frames} bilder · ${fmtBytes(t.size_bytes)} · ${esc(t.encoder)}` +
-    `${t.temp_station ? ` · vägtemp. ${esc(t.temp_station)}` : ""} · skapad ${fmtTime(t.created_at)}` : "";
-  $("clip").innerHTML = `
-    <div class="clip-grid">
-      ${mp4 ? `<div><h3>Video (MP4)</h3>
-        <video src="${mp4.url}" controls loop muted playsinline preload="metadata"></video>
-        <p class="muted">${fmtTime(mp4.range_start)} – ${fmtTime(mp4.range_end)}<br>${meta(mp4)}</p>
-        <a class="btn small ghost" href="${mp4.url}" download>Ladda ner MP4</a></div>` : ""}
-      ${gif ? `<div><h3>GIF-animation</h3>
-        <img src="${gif.url}" alt="GIF-animation ${esc(label)}" loading="lazy">
-        <p class="muted">${meta(gif)}</p>
-        <a class="btn small ghost" href="${gif.url}" download>Ladda ner GIF</a></div>` : ""}
-    </div>
-    ${isAdmin ? `<p><button type="button" class="btn small danger" id="delClip">Ta bort den här timelapsen</button></p>` : ""}`;
+  $("clips").innerHTML = clips.map((c) => {
+    const kinds = [c.mp4 && "MP4", c.gif && "GIF"].filter(Boolean).join(" + ");
+    const size = (c.mp4?.bytes || 0) + (c.gif?.bytes || 0);
+    const open = openClip === c.id;
+    return `<article class="card clip-item${open ? " open" : ""}" data-clip="${c.id}">
+      <header class="clip-head">
+        <button type="button" class="linklike clip-title" data-open="${c.id}" aria-expanded="${open}">
+          ${esc(fmtRange(c))}</button>
+        <span class="muted">${kinds}${c.duration_s ? ` · ${c.duration_s} s` : ""} · ${fmtBytes(size)}${c.temp_station ?
+          ` · vägtemp. ${esc(c.temp_station)}` : ""} · skapad ${fmtTime(c.created_at)}</span>
+        ${isAdmin ? `<button type="button" class="btn small danger clip-del" data-del-clip="${c.id}">Ta bort</button>` : ""}
+      </header>
+      ${open ? `<div class="clip-grid">
+        ${c.mp4 ? `<div><video src="${c.mp4.url}" controls loop muted playsinline autoplay preload="metadata"></video>
+          <a class="btn small ghost" href="${c.mp4.url}" download>Ladda ner MP4</a></div>` : ""}
+        ${c.gif ? `<div><img src="${c.gif.url}" alt="GIF ${esc(fmtRange(c))}" loading="lazy">
+          <a class="btn small ghost" href="${c.gif.url}" download>Ladda ner GIF</a></div>` : ""}
+      </div>` : ""}
+    </article>`;
+  }).join("");
 }
 
-function renderTabs() {
-  $("tabs").innerHTML = periods.map((p) => {
-    const has = cam.timelapses[p.key] ? "has" : "";
-    return `<button role="tab" class="tab ${has} ${p.key === activePeriod ? "active" : ""}"
-      data-period="${p.key}" aria-selected="${p.key === activePeriod}">${esc(p.label)}</button>`;
-  }).join("");
+async function loadClips() {
+  clips = await api(`api/cameras/${encodeURIComponent(camId)}/clips`);
+  if (openClip === null && clips.length) openClip = clips[0].id;
+  renderClips();
 }
 
 function renderJob(job) {
   const el = $("jobStatus");
   if (!job) { el.textContent = ""; return; }
-  const txt = { queued: "I kö…", running: "Genererar…", done: "Klart", failed: "Misslyckades" }[job.status];
+  const txt = { queued: "I kö…", running: "Genererar…", done: "Klart", failed: "Misslyckades",
+    skipped: "Hoppades över" }[job.status] || job.status;
+  const how = { nightly: "automatisk (äldre)", batch: "län/hela Sverige" }[job.trigger] || "manuell";
   el.className = `job-status ${job.status}`;
-  el.innerHTML = `<b>${txt}</b> <span class="muted">(${job.trigger === "nightly" ? "nattkörning" : "manuell"},
+  el.innerHTML = `<b>Senaste generering: ${txt}</b> <span class="muted">(${how},
     ${fmtTime(job.finished_at || job.started_at || job.created_at)})</span>
     ${job.message ? `<pre>${esc(job.message)}</pre>` : ""}`;
   const busy = job.status === "queued" || job.status === "running";
-  $("generate").disabled = busy;
   clearTimeout(pollTimer);
   if (busy) pollTimer = setTimeout(() => pollJob(job.id), 3000);
 }
@@ -63,7 +67,10 @@ function renderJob(job) {
 async function pollJob(id) {
   const job = await api(`api/jobs/${id}`);
   renderJob(job);
-  if (job.status === "done" || job.status === "failed") await load();
+  if (!["queued", "running"].includes(job.status)) {
+    if (job.clip_id) openClip = job.clip_id;
+    await Promise.all([load(), loadClips()]);
+  }
 }
 
 const snapUrl = (day, hms) =>
@@ -174,7 +181,7 @@ function renderCamSettings() {
       : " Ingen temperatur hämtad ännu.";
     info = `Vägväderstation ${esc(st.name)}, ${km}.${last}`;
   }
-  $("stationInfo").innerHTML = (cam.temp_overlay ? "Visas i nattkörningen och när du genererar. " :
+  $("stationInfo").innerHTML = (cam.temp_overlay ? "Visas som standard när du genererar. " :
     "Avstängd för den här kameran. ") + info;
 
   // Image resolution
@@ -215,8 +222,6 @@ function render() {
   $("enabledLabel").textContent = cam.enabled ? "Aktiv – sparar bilder" : "Inaktiv";
   renderCamSettings();
   if (!shot) showLatest();
-  renderTabs();
-  renderClip();
   renderJob(cam.last_job);
 }
 
@@ -235,12 +240,20 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key === "ArrowRight" && !$("nextImg").hidden && !$("nextImg").disabled) { ev.preventDefault(); step(1); }
 });
 
-$("tabs").addEventListener("click", (ev) => {
-  const b = ev.target.closest("[data-period]");
-  if (!b) return;
-  activePeriod = b.dataset.period;
-  renderTabs();
-  renderClip();
+$("clips").addEventListener("click", async (ev) => {
+  const open = ev.target.closest("[data-open]");
+  if (open) {
+    const id = Number(open.dataset.open);
+    openClip = openClip === id ? -1 : id;
+    return renderClips();
+  }
+  const del = ev.target.closest("[data-del-clip]");
+  if (del) {
+    const c = clips.find((x) => x.id === Number(del.dataset.delClip));
+    const r = await adminDelete(`Ta bort klippet ${fmtRange(c)}?`,
+      () => api(`api/admin/clips/${c.id}`, { method: "DELETE" }));
+    if (r) await Promise.all([load(), loadClips()]);
+  }
 });
 
 $("enabled").addEventListener("change", async (ev) => {
@@ -254,21 +267,19 @@ $("enabled").addEventListener("change", async (ev) => {
 $("tempMode").addEventListener("change", (ev) => saveCamSetting({ temp_overlay_mode: ev.target.value }));
 $("resMode").addEventListener("change", (ev) => saveCamSetting({ resolution_mode: ev.target.value }));
 
-$("generate").addEventListener("click", async () => {
-  const chosen = [...document.querySelectorAll("#periodChecks input:checked")].map((i) => i.value);
-  if (!chosen.length) { alert("Välj minst en period."); return; }
-  try {
-    const job = await api(`api/cameras/${encodeURIComponent(camId)}/timelapses`, { method: "POST", body: { periods: chosen } });
-    renderJob(job);
-  } catch (e) { alert(`Kunde inte starta: ${e.message}`); }
-});
-
 (async () => {
   if (!camId) { $("camName").textContent = "Ingen kamera vald"; return; }
-  periods = await api("api/periods");
-  $("periodChecks").innerHTML = periods.map((p) =>
-    `<label class="check"><input type="checkbox" value="${p.key}" checked> ${esc(p.label)}</label>`).join("");
   try { await load(); } catch (e) { $("camName").textContent = e.message; return; }
+  generator = await createGenerator($("generator"), {
+    availabilityUrl: () => `api/cameras/${encodeURIComponent(camId)}/availability`,
+    temperatureDefault: () => (cam.temp_overlay ? "på" : "av"),
+    submit: async (body) => {
+      const job = await api(`api/cameras/${encodeURIComponent(camId)}/clips`, { method: "POST", body });
+      renderJob(job);
+      return "Genereringen är startad. Klippet visas i biblioteket när det är klart.";
+    },
+  });
+  await loadClips();
   try { await loadDay(null); } catch (_) { /* browsing stays hidden */ }
   updateNav();
   if (cam.lat != null) {
@@ -321,14 +332,6 @@ $("delDay").addEventListener("click", async () => {
   if (r) { await load(); showLatest(); }
 });
 
-$("clip").addEventListener("click", async (ev) => {
-  if (!ev.target.closest("#delClip")) return;
-  const label = periods.find((p) => p.key === activePeriod)?.label ?? activePeriod;
-  const r = await adminDelete(`Ta bort timelapsen för ${label} (MP4 och GIF)?`,
-    () => api(`${camPath()}/timelapses?period=${activePeriod}`, { method: "DELETE" }));
-  if (r) await load();
-});
-
 $("delOlder").addEventListener("click", async () => {
   const before = $("delBefore").value;
   if (!before) { alert("Välj ett datum."); return; }
@@ -346,7 +349,7 @@ $("delAllImages").addEventListener("click", async () => {
 $("delAllClips").addEventListener("click", async () => {
   const r = await adminDelete(`Ta bort ALLA timelapses för ${cam.name}?`,
     () => api(`${camPath()}/timelapses`, { method: "DELETE" }));
-  if (r) await load();
+  if (r) await Promise.all([load(), loadClips()]);
 });
 
 (async () => {
@@ -356,6 +359,6 @@ $("delAllClips").addEventListener("click", async () => {
     $("camAdmin").hidden = !isAdmin;
     $("adminHint").hidden = isAdmin || !s.enabled;
     $("delBefore").max = new Date().toISOString().slice(0, 10);
-    if (cam) { renderClip(); updateNav(); }
+    if (cam) { if (clips.length) renderClips(); updateNav(); }
   } catch (_) { /* admin API unavailable: no delete buttons */ }
 })();

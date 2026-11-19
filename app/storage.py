@@ -2,7 +2,7 @@
 
 snapshots/{cam}/{YYYY-MM-DD}/{HHMMSS}.jpg   all images, kept snapshot_retention_days
 archive/{cam}/{YYYY-MM-DD}/{HH}.jpg         first image of each hour, kept archive_retention_days
-timelapses/{cam}/{period}.mp4|.gif          latest generated clip per period
+timelapses/{cam}/{clip_id}.mp4|.gif         generated clips (library)
 """
 
 from __future__ import annotations
@@ -41,8 +41,19 @@ def archive_path(settings: Settings, camera_id: str, photo_time: datetime) -> Pa
     return settings.archive_dir / safe_id(camera_id) / t.strftime("%Y-%m-%d") / f"{t:%H}.jpg"
 
 
-def timelapse_path(settings: Settings, camera_id: str, period: str, kind: str) -> Path:
-    return settings.timelapse_dir / safe_id(camera_id) / f"{period}.{kind}"
+def clip_path(settings: Settings, camera_id: str, clip_id: int, kind: str) -> Path:
+    return settings.timelapse_dir / safe_id(camera_id) / f"{clip_id}.{kind}"
+
+
+def clip_file(settings: Settings, camera_id: str, stored: str | None) -> Path | None:
+    """Location of a stored clip file below the current timelapse directory.
+
+    Only the file name of the stored path is used, so clips keep working when DATA_DIR
+    moves, and a stored path can never point outside the timelapse directory.
+    """
+    if not stored:
+        return None
+    return settings.timelapse_dir / safe_id(camera_id) / Path(stored).name
 
 
 def write_atomic(path: Path, data: bytes) -> None:

@@ -8,16 +8,17 @@ import hmac
 import logging
 import os
 import time
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
-from app import cameras, cleanup, settings_store, storage, weather
-from app.api.routes import invalidate_usage
+from app import cameras, cleanup, settings_store, storage, timelapse, weather
+from app.api.routes import batch_dict, invalidate_usage
 from app.config import get_settings
-from app.db import Camera, Timelapse, session_scope
+from app.db import Camera, Clip, session_scope
 
 log = logging.getLogger(__name__)
 
@@ -216,18 +217,9 @@ def storage_overview() -> dict:
     with session_scope() as s:
         cams = {c.id: c for c in s.scalars(select(Camera).where(Camera.id.in_(ids)))}
         clips: dict[str, list[dict]] = {}
-        for t in s.scalars(select(Timelapse)):
-            try:
-                size = os.path.getsize(t.path)
-            except OSError:
-                size = 0
-            clips.setdefault(t.camera_id, []).append(
-                {
-                    "period": t.period,
-                    "kind": t.kind,
-                    "bytes": size,
-                    "created_at": t.created_at.isoformat() + "Z",
-                }
+        for c in s.scalars(select(Clip)):
+            clips.setdefault(c.camera_id, []).append(
+                {"id": c.id, "bytes": c.mp4_bytes + c.gif_bytes, "created_at": c.created_at.isoformat() + "Z"}
             )
     rows = []
     for cid in ids:
@@ -299,8 +291,39 @@ async def delete_snapshot(camera_id: str, day: str, name: str) -> dict:
 
 
 @router.delete("/cameras/{camera_id}/timelapses", dependencies=[Depends(require_admin)])
-async def delete_camera_timelapses(camera_id: str, period: str | None = None) -> dict:
-    return await asyncio.to_thread(_run, cleanup.delete_timelapses, camera_id, period=period)
+async def delete_camera_timelapses(camera_id: str) -> dict:
+    """Delete all library clips of a camera."""
+    return await asyncio.to_thread(_run, cleanup.delete_timelapses, camera_id)
+
+
+@router.delete("/clips/{clip_id}", dependencies=[Depends(require_admin)])
+async def delete_clip(clip_id: int) -> dict:
+    return await asyncio.to_thread(_run, cleanup.delete_timelapses, clip_id=clip_id)
+
+
+class BatchRequest(BaseModel):
+    scope: str  # county | all
+    county_no: int | None = None
+    start: datetime
+    end: datetime
+    formats: list[str] = ["mp4", "gif"]
+    duration_s: int = timelapse.DEFAULT_DURATION
+    temp_overlay: str = "default"
+
+
+@router.post("/batches", status_code=202, dependencies=[Depends(require_admin)])
+def create_batch(body: BatchRequest, request: Request) -> dict:
+    """Generate one clip per enabled camera in a county or all of Sweden (admin only)."""
+    try:
+        req = timelapse.make_request(
+            get_settings(), body.start, body.end, body.formats, body.duration_s, body.temp_overlay
+        )
+        batch, skipped = request.app.state.jobs.enqueue_batch(body.scope, body.county_no, req)
+    except timelapse.RequestError as e:
+        raise HTTPException(400, str(e)) from None
+    data = batch_dict(batch)
+    data["skipped_names"] = skipped[:50]
+    return data
 
 
 class Wipe(BaseModel):
