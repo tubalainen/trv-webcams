@@ -17,7 +17,7 @@ from sqlalchemy import delete, select, update
 
 from app import storage
 from app.config import Settings
-from app.db import Camera, Job, RoadTemperature, Timelapse, session_scope, utcnow
+from app.db import Batch, Camera, Clip, Job, RoadTemperature, session_scope, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -196,38 +196,38 @@ def delete_timelapses(
     settings: Settings,
     camera_id: str | None = None,
     *,
-    period: str | None = None,
+    clip_id: int | None = None,
     before: str | None = None,
 ) -> Result:
-    """Delete timelapses (MP4 + GIF) for a camera or all cameras, optionally one period or
-    only clips created before a date."""
-    from app.timelapse import PERIODS
-
-    if period is not None and period not in PERIODS:
-        raise CleanupError("Okänd period")
+    """Delete library clips (MP4 and GIF): one clip, all clips of a camera or of all
+    cameras, optionally only clips created before a date."""
     if camera_id is not None:
         _camera_exists(camera_id)
     _ensure_idle(camera_id)
     cutoff = datetime.combine(parse_day(before), datetime.min.time()) if before is not None else None
     result = Result()
     with session_scope() as s:
-        stmt = select(Timelapse)
+        stmt = select(Clip)
         if camera_id is not None:
-            stmt = stmt.where(Timelapse.camera_id == camera_id)
-        if period is not None:
-            stmt = stmt.where(Timelapse.period == period)
+            stmt = stmt.where(Clip.camera_id == camera_id)
+        if clip_id is not None:
+            stmt = stmt.where(Clip.id == clip_id)
         if cutoff is not None:
-            stmt = stmt.where(Timelapse.created_at < cutoff)
+            stmt = stmt.where(Clip.created_at < cutoff)
         rows = list(s.scalars(stmt))
-        clips = {(r.camera_id, r.period) for r in rows}
+        if clip_id is not None and not rows:
+            raise CleanupError("Klippet finns inte")
         for r in rows:
-            _remove_file(Path(r.path), result)
+            for p in (r.mp4_path, r.gif_path):
+                f = storage.clip_file(settings, r.camera_id, p)
+                if f is not None:
+                    _remove_file(f, result)
             s.delete(r)
             result.cameras.add(r.camera_id)
-    result.timelapses = len(clips)
-    for cam_id, _p in clips:
+        result.timelapses = len(rows)
+    for cam_id in result.cameras:
         _drop_empty(settings.timelapse_dir / storage.safe_id(cam_id))
-    log.info("Deleted %d timelapses (%d bytes)", result.timelapses, result.bytes)
+    log.info("Deleted %d clips (%d bytes)", result.timelapses, result.bytes)
     return result
 
 
@@ -239,7 +239,7 @@ def cameras_with_data(settings: Settings) -> list[str]:
             dirs |= {d.name for d in root.iterdir() if d.is_dir()}
     with session_scope() as s:
         ids = list(s.scalars(select(Camera.id)))
-        with_clips = set(s.scalars(select(Timelapse.camera_id).distinct()))
+        with_clips = set(s.scalars(select(Clip.camera_id).distinct()))
     return [cid for cid in ids if storage.safe_id(cid) in dirs or cid in with_clips]
 
 
@@ -278,8 +278,9 @@ async def wipe_all(settings: Settings, jobs) -> Result:
             _remove_tree(root, result)
             root.mkdir(parents=True, exist_ok=True)
         with session_scope() as s:
-            result.timelapses = len({(r.camera_id, r.period) for r in s.scalars(select(Timelapse))})
-            s.execute(delete(Timelapse))
+            result.timelapses = len(s.scalars(select(Clip.id)).all())
+            s.execute(delete(Clip))
+            s.execute(delete(Batch))
             s.execute(delete(Job))
             s.execute(delete(RoadTemperature))
             s.execute(

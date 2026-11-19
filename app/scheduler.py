@@ -1,4 +1,7 @@
-"""Background jobs: collection, metadata sync, nightly timelapses and retention."""
+"""Background jobs: collection, metadata sync, road temperatures and daily retention.
+
+Timelapses are only generated on request (no nightly generation since 0.1.6).
+"""
 
 from __future__ import annotations
 
@@ -45,12 +48,11 @@ def build_scheduler(settings: Settings, jobs: JobQueue) -> AsyncIOScheduler:
         except Exception:  # noqa: BLE001
             log.exception("Road temperature collection failed")
 
-    async def nightly():
+    async def daily_retention():
         try:
             await asyncio.to_thread(retention.run_retention, settings)
         except Exception:  # noqa: BLE001
             log.exception("Retention failed")
-        jobs.enqueue_nightly()
 
     common = {"coalesce": True, "max_instances": 1, "misfire_grace_time": 600}
     sched.add_job(
@@ -75,10 +77,10 @@ def build_scheduler(settings: Settings, jobs: JobQueue) -> AsyncIOScheduler:
         **common,
     )
     sched.add_job(
-        nightly,
+        daily_retention,
         CronTrigger(hour=settings.nightly_hour, minute=settings.nightly_minute),
-        id="nightly",
-        name="Nattlig timelapse",
+        id="retention",
+        name="Daglig rensning",
         **common,
     )
     return sched
@@ -89,5 +91,5 @@ def reschedule(sched: AsyncIOScheduler, settings: Settings) -> None:
     sched.reschedule_job("collect", trigger=IntervalTrigger(minutes=settings.collect_interval_minutes))
     sched.reschedule_job("temps", trigger=IntervalTrigger(minutes=settings.temp_collect_interval_minutes))
     sched.reschedule_job(
-        "nightly", trigger=CronTrigger(hour=settings.nightly_hour, minute=settings.nightly_minute)
+        "retention", trigger=CronTrigger(hour=settings.nightly_hour, minute=settings.nightly_minute)
     )

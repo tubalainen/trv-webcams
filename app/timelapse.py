@@ -1,4 +1,9 @@
-"""Timelapse generation: frame selection, ffmpeg runs and the job queue."""
+"""Timelapse generation on request: frame selection, ffmpeg runs, clips and the job queue.
+
+There is no automatic (nightly) generation. A user picks a camera, a county or all of
+Sweden, a time range, the formats (MP4 and/or GIF) and the clip length; each camera
+gets its own clip in the library (table `clips`).
+"""
 
 from __future__ import annotations
 
@@ -14,33 +19,91 @@ from sqlalchemy import select
 
 from app import cameras, ffmpeg, overlay, storage, weather
 from app.config import Settings
-from app.db import Camera, Job, Timelapse, session_scope, utcnow
+from app.db import Batch, Camera, Clip, Job, session_scope, utcnow
 
 log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class Period:
+class Preset:
     key: str
     label: str
     days: int
-    target_seconds: int
-    source: str  # snapshots | archive
 
 
-PERIODS: dict[str, Period] = {
+# Quick picks in the generate dialog
+PRESETS: dict[str, Preset] = {
     p.key: p
     for p in [
-        Period("1d", "1 dygn", 1, 12, "snapshots"),
-        Period("7d", "7 dygn", 7, 30, "snapshots"),
-        Period("14d", "14 dygn", 14, 45, "snapshots"),
-        Period("31d", "31 dygn", 31, 60, "snapshots"),
-        Period("90d", "Kvartal", 90, 75, "archive"),
-        Period("365d", "År", 365, 90, "archive"),
+        Preset("1d", "Senaste dygnet", 1),
+        Preset("7d", "7 dygn", 7),
+        Preset("14d", "14 dygn", 14),
+        Preset("31d", "31 dygn", 31),
+        Preset("90d", "Kvartal", 90),
+        Preset("365d", "År", 365),
     ]
 }
 
+DURATIONS = (10, 30, 60, 120)
+DEFAULT_DURATION = 30
+FORMATS = ("mp4", "gif")
+TEMP_CHOICES = ("default", "on", "off")
 MIN_FRAMES = 2
+MAX_BATCH_CAMERAS = 500
+
+
+class RequestError(ValueError):
+    """Invalid generate request (Swedish message for the user)."""
+
+
+@dataclass(frozen=True)
+class ClipRequest:
+    start: datetime  # aware UTC
+    end: datetime
+    formats: tuple[str, ...]
+    duration_s: int
+    temp_overlay: str = "default"
+
+    @property
+    def formats_str(self) -> str:
+        return ",".join(self.formats)
+
+
+def _aware(dt: datetime) -> datetime:
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
+
+
+def _naive_utc(dt: datetime) -> datetime:
+    return _aware(dt).replace(tzinfo=None)
+
+
+def make_request(
+    settings: Settings,
+    start: datetime,
+    end: datetime,
+    formats: list[str] | tuple[str, ...],
+    duration_s: int = DEFAULT_DURATION,
+    temp_overlay: str = "default",
+    now: datetime | None = None,
+) -> ClipRequest:
+    """Validate a generate request."""
+    now = now or datetime.now(UTC)
+    start, end = _aware(start), _aware(end)
+    if end > now:
+        end = now  # "to now" or an end later today: stop at the newest image
+    if start >= end:
+        raise RequestError("Starten måste ligga före slutet")
+    if end - start > timedelta(days=settings.archive_retention_days):
+        raise RequestError(f"Tidsspannet får vara högst {settings.archive_retention_days} dagar")
+    wanted = set(formats or ())
+    fmts = tuple(f for f in FORMATS if f in wanted)
+    if not fmts or len(fmts) != len(wanted):
+        raise RequestError("Välj MP4, GIF eller båda")
+    if duration_s not in DURATIONS:
+        raise RequestError(f"Längden ska vara en av {', '.join(map(str, DURATIONS))} sekunder")
+    if temp_overlay not in TEMP_CHOICES:
+        raise RequestError("Ogiltigt val för temperaturgraf")
+    return ClipRequest(start, end, fmts, duration_s, temp_overlay)
 
 
 def subsample(frames: list[Path], max_frames: int) -> list[Path]:
@@ -53,14 +116,46 @@ def subsample(frames: list[Path], max_frames: int) -> list[Path]:
     return [frames[round(i * (n - 1) / (max_frames - 1))] for i in range(max_frames)]
 
 
-def select_frames(
-    settings: Settings, camera_id: str, period: Period, now: datetime | None = None
-) -> tuple[list[Path], datetime, datetime]:
-    end = now or datetime.now(UTC)
-    start = end - timedelta(days=period.days)
-    root = settings.snapshot_dir if period.source == "snapshots" else settings.archive_dir
-    frames = storage.list_frames(root, camera_id, start, end, settings.timezone)
-    return frames, start, end
+def select_frames(settings: Settings, camera_id: str, start: datetime, end: datetime) -> list[Path]:
+    """All snapshots in the range, plus the hourly archive images for days without snapshots
+    (older than the snapshot retention), oldest first."""
+    tz = settings.timezone
+    snaps = storage.list_frames(settings.snapshot_dir, camera_id, start, end, tz)
+    snap_days = {f.parent.name for f in snaps}
+    arch = [
+        f
+        for f in storage.list_frames(settings.archive_dir, camera_id, start, end, tz)
+        if f.parent.name not in snap_days
+    ]
+    if not arch:
+        return snaps
+    frames = snaps + arch
+    frames.sort(key=lambda f: (f.parent.name, f.stem.ljust(6, "0")))
+    return frames
+
+
+def available_days(settings: Settings, camera_ids: list[str]) -> dict[str, list[str]]:
+    """Days with snapshots and days that only have hourly archive images."""
+    snap: set[str] = set()
+    arch: set[str] = set()
+    for cid in camera_ids:
+        for root, target in ((settings.snapshot_dir, snap), (settings.archive_dir, arch)):
+            base = root / storage.safe_id(cid)
+            if base.is_dir():
+                target.update(d.name for d in base.iterdir() if d.is_dir() and storage.DAY_RE.match(d.name))
+    return {"snapshots": sorted(snap), "archive_only": sorted(arch - snap)}
+
+
+def has_images_in_range(settings: Settings, camera_id: str, start: datetime, end: datetime) -> bool:
+    """Cheap check (by day directory) used to skip cameras when queueing a batch."""
+    tz = settings.timezone
+    first = storage.local_time(_aware(start), tz).date().isoformat()
+    last = storage.local_time(_aware(end), tz).date().isoformat()
+    for root in (settings.snapshot_dir, settings.archive_dir):
+        base = root / storage.safe_id(camera_id)
+        if base.is_dir() and any(first <= d.name <= last for d in base.iterdir() if d.is_dir()):
+            return True
+    return False
 
 
 class Encoder:
@@ -145,135 +240,122 @@ def _render_overlay(
     return concat, info.margin
 
 
-async def generate(
-    settings: Settings,
-    encoder: Encoder,
-    camera_id: str,
-    period_key: str,
-    now: datetime | None = None,
-    temp_overlay: bool | None = None,
-) -> str:
-    """Generate MP4 + GIF for one camera/period. Returns a short status message.
+class Skipped(Exception):  # noqa: N818 - not an error: the job is marked "skipped"
+    """Nothing to generate (too few images in the range)."""
 
-    temp_overlay=None uses the camera's setting (or the admin default).
-    """
-    period = PERIODS[period_key]
-    frames, start, end = await asyncio.to_thread(select_frames, settings, camera_id, period, now)
+
+@dataclass
+class ClipResult:
+    clip_id: int
+    message: str
+
+
+def _temp_choice(value: str) -> bool | None:
+    return {"on": True, "off": False}.get(value)
+
+
+async def generate_clip(settings: Settings, encoder: Encoder, camera_id: str, req: ClipRequest) -> ClipResult:
+    """Generate the requested formats for one camera and store them as a library clip."""
+    start, end = req.start, req.end
+    frames = await asyncio.to_thread(select_frames, settings, camera_id, start, end)
     if len(frames) < MIN_FRAMES:
-        return f"{period.label}: för få bilder ({len(frames)})"
+        raise Skipped(f"för få bilder i tidsspannet ({len(frames)})")
 
-    mp4_frames = subsample(frames, period.target_seconds * settings.output_fps)
-    gif_frames = subsample(frames, settings.gif_max_frames)
+    want_mp4, want_gif = "mp4" in req.formats, "gif" in req.formats
+    mp4_frames = subsample(frames, req.duration_s * settings.output_fps)
+    gif_frames = subsample(frames, min(req.duration_s * settings.gif_fps, settings.gif_max_frames))
     size = await asyncio.to_thread(ffmpeg.probe_size, frames[-1]) or (1280, 720)
     if size[0] < MIN_VIDEO_WIDTH:
         factor = -(-MIN_VIDEO_WIDTH // size[0])
         size = (size[0] * factor, size[1] * factor)
-    graph, graph_note = await asyncio.to_thread(temp_graph_for, settings, camera_id, start, end, temp_overlay)
+    graph, graph_note = await asyncio.to_thread(
+        temp_graph_for, settings, camera_id, start, end, _temp_choice(req.temp_overlay)
+    )
 
-    mp4_out = storage.timelapse_path(settings, camera_id, period.key, "mp4")
-    gif_out = storage.timelapse_path(settings, camera_id, period.key, "gif")
-    mp4_out.parent.mkdir(parents=True, exist_ok=True)
-
-    with tempfile.TemporaryDirectory(dir=mp4_out.parent) as tmp:
+    cam_dir = settings.timelapse_dir / storage.safe_id(camera_id)
+    cam_dir.mkdir(parents=True, exist_ok=True)
+    enc = encoder.choice
+    with tempfile.TemporaryDirectory(dir=cam_dir) as tmp:
         tmpd = Path(tmp)
-        mp4_list, gif_list = tmpd / "mp4.ffconcat", tmpd / "gif.ffconcat"
-        ffmpeg.write_concat_file(mp4_frames, settings.output_fps, mp4_list)
-        ffmpeg.write_concat_file(gif_frames, settings.gif_fps, gif_list)
         mp4_tmp, gif_tmp = tmpd / "out.mp4", tmpd / "out.gif"
 
-        mp4_ov = gif_ov = None
-        mp4_margin, gif_margin = 12, 6
-        if graph is not None:
-            mp4_ov, mp4_margin = await asyncio.to_thread(
-                _render_overlay,
-                settings,
-                graph,
-                mp4_frames,
-                start,
-                end,
-                size[0],
-                MP4_GRAPH_FRACTION,
-                settings.output_fps,
-                tmpd,
-                "mp4_",
-            )
-            gif_ov, gif_margin = await asyncio.to_thread(
-                _render_overlay,
-                settings,
-                graph,
-                gif_frames,
-                start,
-                end,
-                settings.gif_width,
-                GIF_GRAPH_FRACTION,
-                settings.gif_fps,
-                tmpd,
-                "gif_",
+        if want_mp4:
+            mp4_list = tmpd / "mp4.ffconcat"
+            ffmpeg.write_concat_file(mp4_frames, settings.output_fps, mp4_list)
+            mp4_ov, mp4_margin = None, 12
+            if graph is not None:
+                mp4_ov, mp4_margin = await asyncio.to_thread(
+                    _render_overlay, settings, graph, mp4_frames, start, end, size[0],
+                    MP4_GRAPH_FRACTION, settings.output_fps, tmpd, "mp4_",
+                )  # fmt: skip
+
+            def mp4_cmd(e: ffmpeg.EncoderChoice) -> list[str]:
+                return ffmpeg.mp4_command(
+                    mp4_list, mp4_tmp, e, settings.output_fps, size[0], size[1], settings.vaapi_device,
+                    overlay=mp4_ov, overlay_margin=mp4_margin,
+                )  # fmt: skip
+
+            try:
+                await ffmpeg.run(mp4_cmd(enc))
+            except RuntimeError as e:
+                if enc.mode == "cpu":
+                    raise
+                log.warning("%s encoding failed (%s), retrying on CPU", enc.codec, e)
+                encoder.downgrade()
+                enc = encoder.choice
+                await ffmpeg.run(mp4_cmd(enc))
+
+        if want_gif:
+            gif_list = tmpd / "gif.ffconcat"
+            ffmpeg.write_concat_file(gif_frames, settings.gif_fps, gif_list)
+            gif_ov, gif_margin = None, 6
+            if graph is not None:
+                gif_ov, gif_margin = await asyncio.to_thread(
+                    _render_overlay, settings, graph, gif_frames, start, end, settings.gif_width,
+                    GIF_GRAPH_FRACTION, settings.gif_fps, tmpd, "gif_",
+                )  # fmt: skip
+            await ffmpeg.run(
+                ffmpeg.gif_command(
+                    gif_list,
+                    gif_tmp,
+                    settings.gif_width,
+                    settings.gif_fps,
+                    overlay=gif_ov,
+                    overlay_margin=gif_margin,
+                )  # fmt: skip
             )
 
-        def mp4_cmd(enc: ffmpeg.EncoderChoice) -> list[str]:
-            return ffmpeg.mp4_command(
-                mp4_list,
-                mp4_tmp,
-                enc,
-                settings.output_fps,
-                size[0],
-                size[1],
-                settings.vaapi_device,
-                overlay=mp4_ov,
-                overlay_margin=mp4_margin,
+        with session_scope() as s:
+            clip = Clip(
+                camera_id=camera_id,
+                range_start=_naive_utc(start),
+                range_end=_naive_utc(end),
+                duration_s=req.duration_s,
+                frames=len(mp4_frames) if want_mp4 else len(gif_frames),
+                encoder=enc.codec if want_mp4 else "gif",
+                temp_station=graph.station if graph else "",
+                created_at=utcnow(),
             )
+            s.add(clip)
+            s.flush()
+            if want_mp4:
+                clip.mp4_path = str(storage.clip_path(settings, camera_id, clip.id, "mp4"))
+                os.replace(mp4_tmp, clip.mp4_path)
+                clip.mp4_bytes = os.path.getsize(clip.mp4_path)
+            if want_gif:
+                clip.gif_path = str(storage.clip_path(settings, camera_id, clip.id, "gif"))
+                os.replace(gif_tmp, clip.gif_path)
+                clip.gif_bytes = os.path.getsize(clip.gif_path)
+            return ClipResult(clip.id, describe(clip, graph_note))
 
-        enc = encoder.choice
-        try:
-            await ffmpeg.run(mp4_cmd(enc))
-        except RuntimeError as e:
-            if enc.mode == "cpu":
-                raise
-            log.warning("%s encoding failed (%s), retrying on CPU", enc.codec, e)
-            encoder.downgrade()
-            enc = encoder.choice
-            await ffmpeg.run(mp4_cmd(enc))
-        await ffmpeg.run(
-            ffmpeg.gif_command(
-                gif_list,
-                gif_tmp,
-                settings.gif_width,
-                settings.gif_fps,
-                overlay=gif_ov,
-                overlay_margin=gif_margin,
-            )
-        )
-        os.replace(mp4_tmp, mp4_out)
-        os.replace(gif_tmp, gif_out)
 
-    with session_scope() as s:
-        for kind, path, n, codec in (
-            ("mp4", mp4_out, len(mp4_frames), enc.codec),
-            ("gif", gif_out, len(gif_frames), "gif"),
-        ):
-            row = s.scalars(
-                select(Timelapse).where(
-                    Timelapse.camera_id == camera_id, Timelapse.period == period.key, Timelapse.kind == kind
-                )
-            ).first()
-            if row is None:
-                row = Timelapse(camera_id=camera_id, period=period.key, kind=kind)
-                s.add(row)
-            row.path = str(path)
-            row.frames = n
-            row.size_bytes = path.stat().st_size
-            row.encoder = codec
-            row.range_start = start.astimezone(UTC).replace(tzinfo=None)
-            row.range_end = end.astimezone(UTC).replace(tzinfo=None)
-            row.created_at = utcnow()
-            row.temp_station = graph.station if graph else ""
-    temp = (
-        f", vägtemp. {graph.station}"
-        if graph
-        else (f", utan temperaturgraf: {graph_note}" if graph_note else "")
-    )
-    return f"{period.label}: {len(mp4_frames)} bilder ({enc.codec}{temp})"
+def describe(clip: Clip, note: str = "") -> str:
+    kinds = " + ".join(k for k, p in (("MP4", clip.mp4_path), ("GIF", clip.gif_path)) if p)
+    if clip.temp_station:
+        temp = f", vägtemp. {clip.temp_station}"
+    else:
+        temp = f", utan temperaturgraf: {note}" if note else ""
+    return f"{kinds}: {clip.frames} bilder, {clip.duration_s} s ({clip.encoder}{temp})"
 
 
 class JobQueue:
@@ -287,6 +369,10 @@ class JobQueue:
     async def start(self) -> None:
         with session_scope() as s:
             for job in s.scalars(select(Job).where(Job.status.in_(["queued", "running"]))):
+                if job.range_start is None:  # pre 0.1.6 nightly/period job: no longer supported
+                    job.status, job.finished_at = "failed", utcnow()
+                    job.message = "Ersatt av generering på begäran"
+                    continue
                 job.status = "queued"
                 self.queue.put_nowait(job.id)
         self.resize(self.settings.max_concurrent_jobs)
@@ -305,20 +391,34 @@ class JobQueue:
         await asyncio.gather(*self._workers, return_exceptions=True)
         self._workers.clear()
 
-    def enqueue(self, camera_id: str, periods: list[str], trigger: str = "manual") -> Job:
-        periods = [p for p in periods if p in PERIODS] or list(PERIODS)
+    def enqueue_clip(
+        self, camera_id: str, req: ClipRequest, *, batch_id: int | None = None, trigger: str = "manual"
+    ) -> Job:
+        """Queue one clip. An identical request that is still queued is returned instead."""
         with session_scope() as s:
-            existing = s.scalars(
-                select(Job).where(Job.camera_id == camera_id, Job.status.in_(["queued", "running"]))
-            ).first()
-            if existing is not None and existing.status == "queued":
-                merged = sorted(set(existing.periods.split(",")) | set(periods), key=list(PERIODS).index)
-                existing.periods = ",".join(merged)
-                return existing
+            if batch_id is None:
+                dup = s.scalars(
+                    select(Job).where(
+                        Job.camera_id == camera_id,
+                        Job.status == "queued",
+                        Job.range_start == _naive_utc(req.start),
+                        Job.range_end == _naive_utc(req.end),
+                        Job.formats == req.formats_str,
+                        Job.duration_s == req.duration_s,
+                        Job.temp_overlay == req.temp_overlay,
+                    )
+                ).first()
+                if dup is not None:
+                    return dup
             job = Job(
                 camera_id=camera_id,
-                periods=",".join(periods),
                 trigger=trigger,
+                batch_id=batch_id,
+                range_start=_naive_utc(req.start),
+                range_end=_naive_utc(req.end),
+                formats=req.formats_str,
+                duration_s=req.duration_s,
+                temp_overlay=req.temp_overlay,
                 status="queued",
                 created_at=utcnow(),
             )
@@ -329,13 +429,48 @@ class JobQueue:
         with session_scope() as s:
             return s.get(Job, job_id)
 
-    def enqueue_nightly(self) -> int:
+    def enqueue_batch(self, scope: str, county_no: int | None, req: ClipRequest) -> tuple[Batch, list[str]]:
+        """One clip per enabled camera in the county (or all of Sweden) that has images in
+        the range. Returns the batch and the names of the cameras that were skipped."""
+        if scope not in ("county", "all"):
+            raise RequestError("Välj län eller hela Sverige")
+        if scope == "county" and county_no is None:
+            raise RequestError("Välj ett län")
         with session_scope() as s:
-            ids = [c.id for c in s.scalars(select(Camera).where(Camera.enabled))]
-        for cid in ids:
-            self.enqueue(cid, list(PERIODS), trigger="nightly")
-        log.info("Queued nightly timelapses for %d cameras", len(ids))
-        return len(ids)
+            stmt = select(Camera).where(Camera.enabled)
+            if scope == "county":
+                stmt = stmt.where(Camera.county_no == county_no)
+            cams = [(c.id, c.name) for c in s.scalars(stmt.order_by(Camera.name))]
+        if not cams:
+            raise RequestError("Inga aktiva kameror i urvalet")
+        with_images = [c for c in cams if has_images_in_range(self.settings, c[0], req.start, req.end)]
+        skipped = [name for cid, name in cams if (cid, name) not in with_images]
+        if not with_images:
+            raise RequestError("Ingen av kamerorna har bilder i tidsspannet")
+        if len(with_images) > MAX_BATCH_CAMERAS:
+            raise RequestError(f"Högst {MAX_BATCH_CAMERAS} kameror åt gången ({len(with_images)} valda)")
+        with session_scope() as s:
+            batch = Batch(
+                scope=scope,
+                county_no=county_no if scope == "county" else None,
+                range_start=_naive_utc(req.start),
+                range_end=_naive_utc(req.end),
+                formats=req.formats_str,
+                duration_s=req.duration_s,
+                temp_overlay=req.temp_overlay,
+                total=len(with_images),
+                skipped=len(skipped),
+                created_at=utcnow(),
+            )
+            s.add(batch)
+            s.flush()
+            batch_id = batch.id
+        for cid, _name in with_images:
+            self.enqueue_clip(cid, req, batch_id=batch_id, trigger="batch")
+        with session_scope() as s:
+            batch = s.get(Batch, batch_id)
+        log.info("Queued batch %s: %d cameras, %d skipped", batch_id, len(with_images), len(skipped))
+        return batch, skipped
 
     async def _worker(self, index: int = 0) -> None:
         while True:
@@ -352,21 +487,29 @@ class JobQueue:
     async def run_job(self, job_id: int) -> None:
         with session_scope() as s:
             job = s.get(Job, job_id)
-            if job is None or job.status != "queued":
+            if job is None or job.status != "queued" or job.range_start is None:
                 return
             job.status, job.started_at = "running", utcnow()
-            camera_id, periods = job.camera_id, job.periods.split(",")
-        messages, failed = [], False
-        for p in periods:
-            try:
-                messages.append(await generate(self.settings, self.encoder, camera_id, p))
-            except Exception as e:  # noqa: BLE001
-                failed = True
-                log.exception("Timelapse %s/%s failed", camera_id, p)
-                messages.append(f"{PERIODS[p].label}: fel – {e}")
+            camera_id = job.camera_id
+            req = ClipRequest(
+                _aware(job.range_start),
+                _aware(job.range_end),
+                tuple(job.formats.split(",")),
+                job.duration_s or DEFAULT_DURATION,
+                job.temp_overlay or "default",
+            )
+        status, message, clip_id = "done", "", None
+        try:
+            result = await generate_clip(self.settings, self.encoder, camera_id, req)
+            clip_id, message = result.clip_id, result.message
+        except Skipped as e:
+            status, message = "skipped", f"Hoppades över: {e}"
+        except Exception as e:  # noqa: BLE001
+            log.exception("Clip for %s failed", camera_id)
+            status, message = "failed", f"Fel: {e}"
         with session_scope() as s:
             job = s.get(Job, job_id)
-            job.status = "failed" if failed else "done"
-            job.message = "\n".join(messages)
-            job.finished_at = utcnow()
-        log.info("Job %s for %s finished: %s", job_id, camera_id, "; ".join(messages))
+            if job is None:  # removed meanwhile ("start over")
+                return
+            job.status, job.message, job.clip_id, job.finished_at = status, message, clip_id, utcnow()
+        log.info("Job %s for %s: %s %s", job_id, camera_id, status, message)

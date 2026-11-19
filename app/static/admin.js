@@ -67,7 +67,7 @@ async function loadStorage() {
   $("storageRows").innerHTML = storageData.cameras.length ? storageData.cameras.map((c) => {
     const [imgs, bytes] = sumDays(c.days, () => true);
     const tlBytes = c.timelapses.reduce((a, t) => a + t.bytes, 0);
-    const clips = new Set(c.timelapses.map((t) => t.period)).size;
+    const clips = c.timelapses.length;
     const span = c.days.length ? `${c.days[0][0]} – ${c.days[c.days.length - 1][0]}` : "–";
     return `<tr>
       <td><a href="camera.html?id=${encodeURIComponent(c.id)}">${esc(c.name)}</a>
@@ -95,7 +95,7 @@ function updatePreview() {
     }
     if (what !== "images") {
       const old = c.timelapses.filter((t) => t.created_at.slice(0, 10) < before);
-      clips += new Set(old.map((t) => t.period)).size;
+      clips += old.length;
       bytes += old.reduce((a, t) => a + t.bytes, 0);
     }
   }

@@ -11,10 +11,9 @@ from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
-from app import __version__, cameras, collector, storage
+from app import __version__, cameras, collector, storage, timelapse
 from app.config import get_settings
-from app.db import Camera, Job, RoadTemperature, Timelapse, WeatherStation, session_scope
-from app.timelapse import PERIODS
+from app.db import Batch, Camera, Clip, Job, RoadTemperature, WeatherStation, session_scope
 
 router = APIRouter()
 
@@ -67,7 +66,13 @@ def _job_dict(j: Job) -> dict:
     return {
         "id": j.id,
         "camera_id": j.camera_id,
-        "periods": j.periods.split(","),
+        "batch_id": j.batch_id,
+        "range_start": _iso(j.range_start),
+        "range_end": _iso(j.range_end),
+        "formats": j.formats.split(",") if j.formats else [],
+        "duration_s": j.duration_s,
+        "temp_overlay": j.temp_overlay,
+        "clip_id": j.clip_id,
         "trigger": j.trigger,
         "status": j.status,
         "message": j.message,
@@ -82,9 +87,21 @@ def health() -> dict:
     return {"status": "ok", "version": __version__}
 
 
-@router.get("/api/periods")
-def periods() -> list[dict]:
-    return [{"key": p.key, "label": p.label, "days": p.days} for p in PERIODS.values()]
+@router.get("/api/generate/options")
+def generate_options() -> dict:
+    """Choices for the generate dialog."""
+    settings = get_settings()
+    return {
+        "presets": [{"key": p.key, "label": p.label, "days": p.days} for p in timelapse.PRESETS.values()],
+        "durations": list(timelapse.DURATIONS),
+        "default_duration": timelapse.DEFAULT_DURATION,
+        "max_days": settings.archive_retention_days,
+        "snapshot_days": settings.snapshot_retention_days,
+        "max_batch_cameras": timelapse.MAX_BATCH_CAMERAS,
+        "output_fps": settings.output_fps,
+        "gif_fps": settings.gif_fps,
+        "gif_max_frames": settings.gif_max_frames,
+    }
 
 
 @router.get("/api/counties")
@@ -139,23 +156,9 @@ def get_camera(camera_id: str) -> dict:
         )
         data["temp_station"] = _station_info(s, cam)
         data["temp_station_max_km"] = settings.temp_station_max_km
-        tls = s.scalars(select(Timelapse).where(Timelapse.camera_id == camera_id)).all()
-        data["timelapses"] = {}
-        for t in tls:
-            if not Path(t.path).exists():
-                continue
-            entry = data["timelapses"].setdefault(t.period, {})
-            entry[t.kind] = {
-                "url": f"/media/timelapses/{storage.safe_id(camera_id)}/{t.period}.{t.kind}"
-                f"?v={int(t.created_at.timestamp())}",
-                "frames": t.frames,
-                "size_bytes": t.size_bytes,
-                "encoder": t.encoder,
-                "created_at": _iso(t.created_at),
-                "range_start": _iso(t.range_start),
-                "range_end": _iso(t.range_end),
-                "temp_station": t.temp_station,
-            }
+        data["clip_count"] = s.scalar(
+            select(func.count()).select_from(Clip).where(Clip.camera_id == camera_id)
+        )
         job = s.scalars(select(Job).where(Job.camera_id == camera_id).order_by(Job.id.desc())).first()
         data["last_job"] = _job_dict(job) if job else None
     archive = settings.archive_dir / storage.safe_id(camera_id)
@@ -304,19 +307,126 @@ def snapshot_image(camera_id: str, day: str, name: str):
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
 
 
+def clip_dict(c: Clip) -> dict:
+    v = int(c.created_at.timestamp())
+    return {
+        "id": c.id,
+        "camera_id": c.camera_id,
+        "batch_id": c.batch_id,
+        "range_start": _iso(c.range_start),
+        "range_end": _iso(c.range_end),
+        "duration_s": c.duration_s,
+        "frames": c.frames,
+        "encoder": c.encoder,
+        "temp_station": c.temp_station,
+        "created_at": _iso(c.created_at),
+        "mp4": {"url": f"media/clips/{c.id}.mp4?v={v}", "bytes": c.mp4_bytes} if c.mp4_path else None,
+        "gif": {"url": f"media/clips/{c.id}.gif?v={v}", "bytes": c.gif_bytes} if c.gif_path else None,
+    }
+
+
 class GenerateRequest(BaseModel):
-    periods: list[str] = []
+    start: datetime
+    end: datetime
+    formats: list[str] = ["mp4", "gif"]
+    duration_s: int = timelapse.DEFAULT_DURATION
+    temp_overlay: str = "default"
+
+    def to_request(self) -> timelapse.ClipRequest:
+        try:
+            return timelapse.make_request(
+                get_settings(), self.start, self.end, self.formats, self.duration_s, self.temp_overlay
+            )
+        except timelapse.RequestError as e:
+            raise HTTPException(400, str(e)) from None
 
 
-@router.post("/api/cameras/{camera_id}/timelapses", status_code=202)
-def generate(camera_id: str, body: GenerateRequest, request: Request) -> dict:
+@router.post("/api/cameras/{camera_id}/clips", status_code=202)
+def generate_clip(camera_id: str, body: GenerateRequest, request: Request) -> dict:
+    """Generate a timelapse for one camera (open to everyone)."""
     with session_scope() as s:
         _get_camera(s, camera_id)
-    bad = [p for p in body.periods if p not in PERIODS]
-    if bad:
-        raise HTTPException(400, f"Okänd period: {', '.join(bad)}")
-    job = request.app.state.jobs.enqueue(camera_id, body.periods or list(PERIODS))
-    return _job_dict(job)
+    req = body.to_request()
+    if not timelapse.has_images_in_range(get_settings(), camera_id, req.start, req.end):
+        raise HTTPException(400, "Kameran har inga sparade bilder i tidsspannet")
+    return _job_dict(request.app.state.jobs.enqueue_clip(camera_id, req))
+
+
+@router.get("/api/cameras/{camera_id}/clips")
+def list_clips(camera_id: str) -> list[dict]:
+    with session_scope() as s:
+        _get_camera(s, camera_id)
+        rows = s.scalars(select(Clip).where(Clip.camera_id == camera_id).order_by(Clip.id.desc()))
+        return [clip_dict(c) for c in rows]
+
+
+@router.get("/api/cameras/{camera_id}/availability")
+def camera_availability(camera_id: str) -> dict:
+    """Days with images, for the calendar in the generate dialog."""
+    with session_scope() as s:
+        _get_camera(s, camera_id)
+    return timelapse.available_days(get_settings(), [camera_id])
+
+
+@router.get("/api/availability")
+def availability(county: int | None = None) -> dict:
+    """Days with images for the enabled cameras in a county (or all of Sweden)."""
+    with session_scope() as s:
+        stmt = select(Camera.id).where(Camera.enabled)
+        if county is not None:
+            stmt = stmt.where(Camera.county_no == county)
+        ids = list(s.scalars(stmt))
+    data = timelapse.available_days(get_settings(), ids)
+    data["cameras"] = len(ids)
+    return data
+
+
+def batch_dict(b: Batch) -> dict:
+    with session_scope() as s:
+        counts = dict(
+            s.execute(select(Job.status, func.count()).where(Job.batch_id == b.id).group_by(Job.status)).all()
+        )
+    return {
+        "id": b.id,
+        "scope": b.scope,
+        "county_no": b.county_no,
+        "county": COUNTIES.get(b.county_no or 0, "") if b.scope == "county" else "Hela Sverige",
+        "range_start": _iso(b.range_start),
+        "range_end": _iso(b.range_end),
+        "formats": b.formats.split(","),
+        "duration_s": b.duration_s,
+        "total": b.total,
+        "skipped_cameras": b.skipped,
+        "status": {k: counts.get(k, 0) for k in ("queued", "running", "done", "failed", "skipped")},
+        "finished": counts.get("queued", 0) + counts.get("running", 0) == 0,
+        "created_at": _iso(b.created_at),
+    }
+
+
+@router.get("/api/batches/{batch_id}")
+def get_batch(batch_id: int) -> dict:
+    with session_scope() as s:
+        b = s.get(Batch, batch_id)
+        if b is None:
+            raise HTTPException(404, "Körningen finns inte")
+    return batch_dict(b)
+
+
+@router.get("/media/clips/{name}")
+def clip_media(name: str):
+    clip_id, _, kind = name.partition(".")
+    if not clip_id.isdigit() or kind not in ("mp4", "gif"):
+        raise HTTPException(404)
+    with session_scope() as s:
+        c = s.get(Clip, int(clip_id))
+        path = (
+            storage.clip_file(get_settings(), c.camera_id, c.mp4_path if kind == "mp4" else c.gif_path)
+            if c
+            else None
+        )
+    if path is None or not path.is_file():
+        raise HTTPException(404)
+    return FileResponse(path, media_type="video/mp4" if kind == "mp4" else "image/gif")
 
 
 @router.get("/api/jobs/{job_id}")
@@ -411,15 +521,3 @@ async def status(request: Request) -> dict:
         "api_key_configured": bool(settings.trv_api_key),
         "admin_enabled": bool(settings.admin_password),
     }
-
-
-@router.get("/media/timelapses/{cam}/{name}")
-def media(cam: str, name: str):
-    settings = get_settings()
-    period, _, kind = name.partition(".")
-    if period not in PERIODS or kind not in ("mp4", "gif") or cam != storage.safe_id(cam):
-        raise HTTPException(404)
-    path = settings.timelapse_dir / cam / f"{period}.{kind}"
-    if not path.is_file():
-        raise HTTPException(404)
-    return FileResponse(path, media_type="video/mp4" if kind == "mp4" else "image/gif")

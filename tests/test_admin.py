@@ -120,4 +120,37 @@ def test_reschedule(settings):
     settings.collect_interval_minutes, settings.nightly_hour = 2, 4
     reschedule(sched, settings)
     assert sched.get_job("collect").trigger.interval.total_seconds() == 120
-    assert "hour='4'" in str(sched.get_job("nightly").trigger)
+    assert "hour='4'" in str(sched.get_job("retention").trigger)
+    # No automatic timelapse generation any more (since 0.1.6)
+    assert {j.id for j in sched.get_jobs()} == {"collect", "temps", "sync", "retention"}
+
+
+def test_batch_generation_requires_admin(admin_settings, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    from app.db import Camera
+
+    monkeypatch.setattr(admin, "FAILED_LOGIN_DELAY", 0)
+    now = datetime.now(UTC)
+    with session_scope() as s:
+        s.add(Camera(id="A", name="A", enabled=True, county_no=14))
+        s.add(Camera(id="B", name="B", enabled=True, county_no=14))
+    day = admin_settings.snapshot_dir / "A" / now.astimezone().strftime("%Y-%m-%d")
+    day.mkdir(parents=True)
+    (day / "000000.jpg").write_bytes(b"x")
+    body = {"scope": "county", "county_no": 14, "start": (now - timedelta(days=1)).isoformat(),
+            "end": now.isoformat(), "formats": ["gif"], "duration_s": 10}  # fmt: skip
+    with TestClient(create_app()) as c:
+        assert c.post("/api/admin/batches", json=body).status_code == 401
+        c.post("/api/admin/login", json={"password": "hemligt"})
+        r = c.post("/api/admin/batches", json=body)
+        assert r.status_code == 202
+        b = r.json()
+        assert b["total"] == 1 and b["skipped_names"] == ["B"] and b["county"] == "Västra Götaland"
+        progress = c.get(f"/api/batches/{b['id']}").json()
+        assert sum(progress["status"].values()) == 1
+        assert (
+            c.post("/api/admin/batches", json={**body, "scope": "county", "county_no": 1}).status_code == 400
+        )
+        assert c.post("/api/admin/batches", json={**body, "scope": "planet"}).status_code == 400
+        assert c.get("/api/batches/999").status_code == 404

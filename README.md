@@ -4,8 +4,7 @@ Webbapplikation som sparar bilder från Trafikverkets webbkameror och skapar tim
 
 - **Karta och lista** över alla ca 1 600 kameror i Sverige, med sökning och filter per län.
 - **Du väljer själv vilka kameror som är aktiva.** Bara aktiva kameror sparar bilder och får timelapses, så att du inte lagrar hela Sveriges kameranät. Du kan också aktivera eller avaktivera alla kameror i ett län på en gång.
-- **Nattlig körning** (02:00) som skapar timelapses för **1, 7, 14 och 31 dygn, ett kvartal och ett år**, både som MP4 och GIF.
-- Knappen **"Generera timelapse"** på varje kamerasida skapar en timelapse direkt.
+- **Timelapses på begäran:** välj en kamera, ett län eller hela Sverige, ett tidsspann (förval eller fritt i en kalender), MP4, GIF eller båda, och längd. Tryck sedan på **Generera**. Klippen sparas i ett bibliotek per kamera. Inget genereras automatiskt.
 - **Graf med vägtemperatur** i timelapses och GIF:ar. Grafen hämtar data från närmaste vägväderstation inom 20 km och ritas fram bild för bild. Den är påslagen som standard och kan stängas av per kamera.
 - **Retention:** alla bilder sparas i 90 dagar. Den första bilden varje timme sparas i ett glest arkiv i 365 dagar, så att det går att göra årsklippet.
 - **Admin-sida** (`/admin.html`, skyddad med `ADMIN_PASSWORD`) där globala inställningar ändras direkt, utan omstart.
@@ -65,17 +64,32 @@ Statusraden visar hur mycket som används nu och en uppskattning för när reten
 /data/app.db
 /data/snapshots/{kamera}/{ÅÅÅÅ-MM-DD}/{HHMMSS}.jpg   90 dagar
 /data/archive/{kamera}/{ÅÅÅÅ-MM-DD}/{HH}.jpg         365 dagar (hårdlänk, 1 bild/timme)
-/data/timelapses/{kamera}/{period}.mp4|.gif         senaste versionen per period
+/data/timelapses/{kamera}/{klipp-id}.mp4|.gif       klippbiblioteket
 ```
 
 Containern startar som root, sätter ägare på `/data` till `PUID:PGID` (standard `1000:1000`) och kör sedan appen som den användaren. En `./data`-mapp som Docker har skapat som root fungerar därför direkt. Ägaren ändras bara när något i `/data` har fel ägare. Kör du containern med `user:` i compose eller `--user` hoppas det steget över, och då måste mappen redan vara skrivbar för den användaren.
+
+## Generera timelapses
+
+Timelapses skapas bara när någon trycker på **Generera**. Det finns ingen automatisk nattkörning sedan 0.1.6.
+
+- **En kamera** (kamerasidan, öppen för alla):
+  - **Tidsspann:** välj ett förval (senaste dygnet, 7, 14 eller 31 dygn, kvartal, år) eller ett eget spann i kalendern, med start- och sluttid. Kalendern markerar dagar med bilder: mörkare för alla bilder, ljusare för dagar som bara har en bild per timme.
+  - **Övrigt:** välj MP4, GIF eller båda, längd (10, 30, 60 eller 120 s) och temperaturgraf (standard, på, av).
+  - **Bibliotek:** klippet hamnar i kamerans bibliotek, där det kan spelas upp, laddas ner och tas bort (admin).
+- **Ett län eller hela Sverige** (översikten, kräver admin):
+  - Knappen **Generera timelapse för …** använder länsfiltret.
+  - Varje aktiv kamera som har bilder i tidsspannet får ett eget klipp, och kameror utan bilder hoppas över.
+  - Förloppet visas i listan. En körning får omfatta högst 500 kameror.
+- **Bilder:** bilderna fördelas jämnt över spannet. För dagar äldre än bildernas retention (90 dagar) används årsarkivet, med en bild per timme. Spannet kan därför vara upp till 365 dagar långt.
+- **Från tidigare versioner:** klipp som skapades av nattkörningen i 0.1.0–0.1.5 flyttas automatiskt in i biblioteket.
 
 ## Admin
 
 Admin-sidan (`⚙ Admin` i toppraden) samlar de globala inställningarna:
 - standard för bildupplösning och temperaturgraf
 - hämtningsintervall
-- tid för nattkörningen
+- tid för den dagliga rensningen (retention)
 - retention
 - hårdvaruacceleration och antal samtidiga jobb
 - video- och GIF-inställningar
@@ -99,7 +113,7 @@ Under **Lagring och rensning** på admin-sidan finns tre verktyg:
   - Välj ett datum, eller snabbvalen 7, 30 eller 90 dagar.
   - Välj bilder, timelapses eller båda, och alla kameror eller en kamera.
   - En förhandsräkning visar hur mycket som tas bort innan du bekräftar.
-  - Bilder räknas per dag, och timelapses efter när de skapades.
+  - Bilder räknas per dag, och klipp efter när de skapades.
 - **Lagring per kamera:** en tabell med bilder, dagar, storlek och timelapses per kamera, med knappar för att ta bort bilder eller timelapses.
 - **Rensa allt och börja om:** tar bort alla bilder, timelapses, sparad vägtemperatur och jobbhistorik.
   - Aktiva kameror, valen per kamera och inställningarna ligger kvar, så insamlingen fortsätter vid nästa hämtning.
@@ -132,7 +146,7 @@ Nere till höger i varje timelapse och GIF visas en liten graf över **vägytans
 
 - **Datakälla:** Trafikverkets vägväderstationer (`WeatherMeasurepoint`/`WeatherObservation`). Varje kamera kopplas till närmaste station *som mäter vägytans temperatur* inom `TEMP_STATION_MAX_KM` (standard 20 km). Stationen och det senaste värdet visas på kamerasidan.
 - **Historik:** Trafikverket sparar bara cirka 7 dygns mätningar. Appen hämtar därför vägtemperaturen var 15:e minut för stationerna som hör till aktiva kameror och sparar den i 365 dagar, lika länge som årsarkivet. När en kamera aktiveras hämtas de senaste 7 dygnen direkt. Grafer för längre perioder fylls på med tiden, och det som saknas lämnas tomt.
-- **Av och på:** grafen är påslagen som standard (i admin). På kamerasidan väljer du "Standard", "På" eller "Av" för just den kameran. Valet gäller både nattkörningen och knappen *Generera timelapse*.
+- **Av och på:** grafen är påslagen som standard (i admin). På kamerasidan väljer du "Standard", "På" eller "Av" för just den kameran. I genereringsrutan kan du också välja för just det klippet.
 - **Upplösning:** Trafikverkets normala bilder är bara cirka 384 pixlar breda. Videon skalas därför upp till minst 768 pixlars bredd, så att grafens text går att läsa.
 
 ## Konfiguration
@@ -149,7 +163,7 @@ Alla inställningar finns i [`.env.example`](.env.example). Allt utom hemlighete
 | `TEMP_OVERLAY_DEFAULT` | `true` | Standard för temperaturgraf i timelapses |
 | `SNAPSHOT_RETENTION_DAYS` | `90` | Hur länge alla bilder sparas |
 | `ARCHIVE_RETENTION_DAYS` | `365` | Hur länge timarkivet sparas |
-| `NIGHTLY_HOUR` / `NIGHTLY_MINUTE` | `2` / `0` | När nattkörningen startar |
+| `NIGHTLY_HOUR` / `NIGHTLY_MINUTE` | `2` / `0` | När den dagliga rensningen (retention) körs |
 | `HWACCEL` | `auto` | `auto`, `nvidia`, `vaapi`, `qsv` eller `cpu` |
 | `MAX_CONCURRENT_JOBS` | `2` | Antal timelapse-jobb som körs samtidigt |
 | `TEMP_STATION_MAX_KM` | `20` | Största avstånd till en vägväderstation för temperaturgrafen |

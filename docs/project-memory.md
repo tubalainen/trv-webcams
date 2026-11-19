@@ -7,6 +7,7 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 | Version | Datum | Issue | PR | Ändring |
 |---------|-------|-------|----|---------|
+| 0.1.6 | 2026-11-19 | #18 | #19 | Generering på begäran (kamera/län/hela Sverige, kalender, MP4/GIF, längd), klippbibliotek, ingen nattlig generering |
 | 0.1.5 | 2026-11-19 | #16 | #17 | Rensa allt, ta bort äldre än X, radering per kamera, dag och bild (admin) |
 | 0.1.4 | 2026-11-19 | #13 | #15 | Admin-sida med lösenord, globala inställningar i databasen, ändringar utan omstart |
 | 0.1.4 | 2026-11-19 | #14 | #15 | Hög-/lågupplösta bilder: standard i admin, val per kamera, HD-märkning med faktisk upplösning |
@@ -31,6 +32,13 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
   `PUID:PGID` utan capabilities. `user:` i compose hoppar över det steget.
 - **GPU:** `HWACCEL=auto` provar NVENC → VAAPI → QSV → CPU med en riktig
   provkodning vid start. GIF görs alltid på CPU.
+- **Ingen automatisk generering (beslut 2026-11-19, 0.1.6):**
+  - Timelapses skapas bara när någon trycker på Generera. Den nattliga cron-tiden används nu bara för retention ("Daglig rensning").
+  - Varje generering ger ett eget klipp (tabellen `clips`, filer `timelapses/{kamera}/{id}.mp4|gif`).
+  - Län och hela Sverige ger ett klipp per aktiv kamera med bilder i spannet (tabellen `batches`, max 500) och kräver admin. En enskild kamera är öppen för alla.
+  - Längden väljs (10/30/60/120 s), och bilderna väljs jämnt över spannet. Dagar utan snapshots tas från timarkivet.
+  - Gamla rader i `timelapses` migreras till `clips` vid start (`db._migrate_timelapses_to_clips`).
+  - Klippfiler slås upp med filnamnet under den aktuella `timelapses`-katalogen (`storage.clip_file`), så att lagrade absoluta sökvägar inte låser `DATA_DIR`.
 
 - **Vägtemperatur:** `Surface.Temperature` från Trafikverkets vägväderstationer. Kameran kopplas
   till närmaste station som *har* vägytesensor (40 av 831 stationer mäter bara luft) inom
@@ -68,7 +76,8 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
   håller insamlingens lås medan den kör. Dagar tas bort i både `snapshots` och `archive`.
   Antal och frigjorda byte räknas per inode, så en arkivlänk räknas inte som en extra bild.
   Pågående jobb för kameran ger 409. "Äldre än" för timelapses gäller när klippet skapades
-  (`created_at`).
+  (`created_at`). Sedan 0.1.6 gäller timelapse-radering klipp, och "Rensa allt" tömmer också
+  `clips` och `batches`.
 
 ## Bra att veta
 

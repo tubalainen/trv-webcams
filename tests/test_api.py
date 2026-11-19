@@ -1,7 +1,12 @@
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
+
 from fastapi.testclient import TestClient
 
 from app.db import Camera, session_scope
 from app.main import create_app
+
+TZ = ZoneInfo("Europe/Stockholm")
 
 
 def _client(settings):
@@ -41,21 +46,43 @@ def test_api_flow(settings):
         assert c.post("/api/cameras/bulk", json={"county": 25, "enabled": True}).json() == {"updated": 1}
 
         detail = c.get("/api/cameras/CAM_1").json()
-        assert detail["timelapses"] == {} and detail["enabled"] is True
+        assert detail["clip_count"] == 0 and detail["enabled"] is True
         assert c.get("/api/cameras/NOPE").status_code == 404
 
         r = c.get("/api/cameras/CAM_1/latest.jpg", follow_redirects=False)
         assert r.status_code == 307
 
-        job = c.post("/api/cameras/CAM_1/timelapses", json={"periods": ["1d"]})
-        assert job.status_code == 202
+        opts = c.get("/api/generate/options").json()
+        assert [p["key"] for p in opts["presets"]][:2] == ["1d", "7d"] and opts["durations"] == [
+            10,
+            30,
+            60,
+            120,
+        ]
+
+        now = datetime.now(UTC)
+        body = {"start": (now - timedelta(days=1)).isoformat(), "end": now.isoformat(), "formats": ["mp4"]}
+        r = c.post("/api/cameras/CAM_1/clips", json=body)
+        assert r.status_code == 400 and "inga sparade bilder" in r.json()["detail"]
+        snap = settings.snapshot_dir / "CAM_1" / f"{now.astimezone(TZ):%Y-%m-%d}" / "000000.jpg"
+        snap.parent.mkdir(parents=True)
+        snap.write_bytes(b"x")
+        job = c.post("/api/cameras/CAM_1/clips", json=body)
+        assert job.status_code == 202 and job.json()["formats"] == ["mp4"]
         assert c.get(f"/api/jobs/{job.json()['id']}").status_code == 200
-        assert c.post("/api/cameras/CAM_1/timelapses", json={"periods": ["2d"]}).status_code == 400
+        assert c.post("/api/cameras/CAM_1/clips", json={**body, "duration_s": 7}).status_code == 400
+        assert c.post("/api/cameras/CAM_1/clips", json={**body, "formats": []}).status_code == 400
+        assert c.get("/api/cameras/CAM_1/clips").json() == []
+        assert c.get("/api/cameras/CAM_1/availability").json()["snapshots"] == [snap.parent.name]
+        assert c.get("/api/availability", params={"county": 14}).json()["cameras"] == 1
+        # County / all of Sweden needs the admin page (disabled without ADMIN_PASSWORD)
+        r = c.post("/api/admin/batches", json={**body, "scope": "all"})
+        assert r.status_code == 403
 
         st = c.get("/api/status").json()
         assert st["cameras_enabled"] == 2 and st["cameras_total"] == 2
-        assert c.get("/media/timelapses/CAM_1/1d.mp4").status_code == 404
-        assert c.get("/media/timelapses/..%2F/1d.mp4").status_code == 404
+        assert c.get("/media/clips/1.mp4").status_code == 404
+        assert c.get("/media/clips/..%2Fapp.db").status_code == 404
         assert "TRV Webbkameror" in c.get("/").text
 
 
@@ -83,3 +110,20 @@ def test_snapshot_browsing(settings):
         assert c.get("/api/cameras/CAM_1/snapshots/2026-11-19/090000.jpg").status_code == 404
         assert c.get("/api/cameras/CAM_1/snapshots/2026-11-19/..%2F..%2Fapp.db").status_code == 404
         assert c.get("/api/cameras/CAM_1/snapshots/..%2F..%2F/084145.jpg").status_code == 404
+
+
+def test_clip_media_uses_current_data_dir(settings):
+    from app.db import Clip
+
+    now = datetime(2026, 11, 19, 8)
+    with _client(settings) as c:
+        with session_scope() as s:
+            # Migrated clip whose stored path points at an older DATA_DIR
+            s.add(Clip(camera_id="CAM_1", range_start=now, range_end=now, created_at=now,
+                       mp4_path="/old/data/timelapses/CAM_1/7d.mp4", gif_path="../../app.db"))  # fmt: skip
+        f = settings.timelapse_dir / "CAM_1" / "7d.mp4"
+        f.parent.mkdir(parents=True)
+        f.write_bytes(b"mp4")
+        clip = c.get("/api/cameras/CAM_1/clips").json()[0]
+        assert c.get("/" + clip["mp4"]["url"]).content == b"mp4"
+        assert c.get(f"/media/clips/{clip['id']}.gif").status_code == 404  # never outside timelapses/

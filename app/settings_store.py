@@ -35,7 +35,7 @@ class Field:
 GROUPS = [
     ("cameras", "Standard för kameror"),
     ("collect", "Hämtning"),
-    ("nightly", "Nattkörning"),
+    ("nightly", "Daglig rensning"),
     ("retention", "Lagring och retention"),
     ("encoding", "Videokodning"),
     ("gif", "GIF"),
@@ -70,7 +70,16 @@ FIELDS: list[Field] = [
         60,
         unit="min",
     ),
-    Field("nightly_hour", "Timme", "nightly", "int", "När timelapses skapas varje natt.", 0, 23),
+    Field(
+        "nightly_hour",
+        "Timme",
+        "nightly",
+        "int",
+        "När bilder och arkiv äldre än retentionen tas bort varje dygn. Timelapses skapas bara när "
+        "någon trycker på Generera.",
+        0,
+        23,
+    ),
     Field("nightly_minute", "Minut", "nightly", "int", "", 0, 59),
     Field(
         "snapshot_retention_days",

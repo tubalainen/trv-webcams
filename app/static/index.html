@@ -29,6 +29,10 @@
         <button id="bulkOn" class="btn small">Aktivera alla i länet</button>
         <button id="bulkOff" class="btn small ghost">Avaktivera alla i länet</button>
       </div>
+      <div class="gen-bar">
+        <button type="button" class="btn small" id="openGen">Generera timelapse för hela Sverige</button>
+        <span id="batchProgress" class="muted" role="status"></span>
+      </div>
       <div class="count" id="count"></div>
       <ul id="list" class="cam-list" aria-label="Kameror"></ul>
     </section>
@@ -41,9 +45,25 @@
     </section>
   </main>
 
+  <dialog id="genDialog" class="gen-dialog" aria-labelledby="genTitle">
+    <form method="dialog" class="dialog-close"><button class="btn small ghost" aria-label="Stäng">✕</button></form>
+    <h2 id="genTitle">Generera timelapse</h2>
+    <p class="muted" id="genIntro"></p>
+    <div id="genLogin" hidden>
+      <p>Generering för ett län eller hela Sverige kräver admin.
+        <a href="admin.html">Logga in som admin</a> och kom tillbaka hit.</p>
+    </div>
+    <div id="genDisabled" hidden>
+      <p>Generering för ett län eller hela Sverige kräver admin, och admin är avstängt.
+        Sätt <code>ADMIN_PASSWORD</code> i <code>.env</code>.</p>
+    </div>
+    <div id="batchGenerator"></div>
+  </dialog>
+
   <script src="vendor/leaflet/leaflet.js"></script>
   <script src="vendor/markercluster/leaflet.markercluster.js"></script>
   <script src="common.js"></script>
+  <script src="generate.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
