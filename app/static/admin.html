@@ -44,6 +44,18 @@ docker compose up -d</pre>
       </div>
     </form>
 
+    <section id="batch" hidden>
+      <h2>Generera för län eller hela Sverige</h2>
+      <div class="card">
+        <p class="muted">Ett klipp per aktiv kamera som har bilder i tidsspannet. Klippen hamnar i varje
+          kameras bibliotek. Kameror utan bilder hoppas över.</p>
+        <label class="field batch-scope"><span>Urval</span>
+          <select id="batchScope"><option value="">Hela Sverige</option></select></label>
+        <div id="batchGenerator"></div>
+        <p id="batchProgress" class="muted" role="status"></p>
+      </div>
+    </section>
+
     <section id="cleanup" hidden>
       <h2>Lagring och rensning</h2>
 
@@ -95,6 +107,7 @@ docker compose up -d</pre>
   </main>
 
   <script src="common.js"></script>
+  <script src="generate.js"></script>
   <script src="admin.js"></script>
 </body>
 </html>

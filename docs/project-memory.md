@@ -7,6 +7,7 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 | Version | Datum | Issue | PR | Ändring |
 |---------|-------|-------|----|---------|
+| 0.1.7 | 2026-11-19 | #20 | #21 | Generering för län och hela Sverige flyttad från översikten till admin, kalendern begränsad till dagar med sparade bilder |
 | 0.1.6 | 2026-11-19 | #18 | #19 | Generering på begäran (kamera/län/hela Sverige, kalender, MP4/GIF, längd), klippbibliotek, ingen nattlig generering |
 | 0.1.5 | 2026-11-19 | #16 | #17 | Rensa allt, ta bort äldre än X, radering per kamera, dag och bild (admin) |
 | 0.1.4 | 2026-11-19 | #13 | #15 | Admin-sida med lösenord, globala inställningar i databasen, ändringar utan omstart |
@@ -35,8 +36,9 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 - **Ingen automatisk generering (beslut 2026-11-19, 0.1.6):**
   - Timelapses skapas bara när någon trycker på Generera. Den nattliga cron-tiden används nu bara för retention ("Daglig rensning").
   - Varje generering ger ett eget klipp (tabellen `clips`, filer `timelapses/{kamera}/{id}.mp4|gif`).
-  - Län och hela Sverige ger ett klipp per aktiv kamera med bilder i spannet (tabellen `batches`, max 500) och kräver admin. En enskild kamera är öppen för alla.
+  - Län och hela Sverige ger ett klipp per aktiv kamera med bilder i spannet (tabellen `batches`, max 500) och kräver admin. Sedan 0.1.7 görs det bara på admin-sidan, och översikten har ingen genereringsknapp (användarens önskan). En enskild kamera är öppen för alla (kamerasidan).
   - Längden väljs (10/30/60/120 s), och bilderna väljs jämnt över spannet. Dagar utan snapshots tas från timarkivet.
+  - Kalendern och förvalen (`generate.js`) går inte längre bak än den första sparade bilden (användarens önskan, 0.1.7). Utan bilder är rutan spärrad.
   - Gamla rader i `timelapses` migreras till `clips` vid start (`db._migrate_timelapses_to_clips`).
   - Klippfiler slås upp med filnamnet under den aktuella `timelapses`-katalogen (`storage.clip_file`), så att lagrade absoluta sökvägar inte låser `DATA_DIR`.
 
@@ -83,6 +85,8 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 - Användarens server: `/opt/trv-webcams`. Den kör `ghcr.io/tubalainen/trv-webcams:latest`
   via compose med NVIDIA-GPU (`deploy`-blocket), och kodaren `h264_nvenc` fungerar där.
+  GPU:n är ett NVIDIA GeForce RTX 3060 (12 GB). Användaren har bekräftat 2026-11-19 (nvtop)
+  att generering på begäran kodar med NVENC och går snabbt.
 - Sparade bilder: `/data/snapshots/{kamera}/{ÅÅÅÅ-MM-DD}/{HHMMSS}.jpg` i lokal tid
   (`TIMEZONE`). Arkivet `/data/archive` har en bild per timme i 365 dagar
   (hårdlänkar).
