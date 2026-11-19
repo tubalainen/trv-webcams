@@ -62,6 +62,16 @@ def archive_snapshot(settings: Settings, camera_id: str, photo_time: datetime, s
     return True
 
 
+def frame_time(path: Path, tz: str) -> datetime | None:
+    """Local capture time of a stored image (.../{YYYY-MM-DD}/{HHMMSS|HH}.jpg), timezone aware."""
+    stem = path.stem.ljust(6, "0")
+    try:
+        naive = datetime.strptime(f"{path.parent.name} {stem}", "%Y-%m-%d %H%M%S")
+    except ValueError:
+        return None
+    return naive.replace(tzinfo=ZoneInfo(tz))
+
+
 def _days_in_range(start: date, end: date) -> list[str]:
     n = (end - start).days
     return [(start + timedelta(days=i)).isoformat() for i in range(n + 1)]

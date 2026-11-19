@@ -63,3 +63,29 @@ def test_concat_file(tmp_path):
     assert r"a'\''b.jpg" in text
     assert text.count("duration 0.100000") == 2
     assert text.strip().endswith("c.jpg'")
+
+
+def test_mp4_command_with_overlay():
+    cmd = ffmpeg.mp4_command(
+        Path("l"),
+        Path("o.mp4"),
+        EncoderChoice("nvidia", "h264_nvenc"),
+        30,
+        640,
+        480,
+        overlay=Path("ov.ffconcat"),
+        overlay_margin=10,
+    )
+    assert cmd.count("-i") == 2 and "ov.ffconcat" in cmd
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert "overlay=x=W-w-10:y=H-h-10" in fc and fc.endswith(",format=yuv420p")
+    assert "-vf" not in cmd and "h264_nvenc" in cmd
+
+
+def test_gif_command_with_overlay():
+    plain = ffmpeg.gif_command(Path("l"), Path("o.gif"), 480, 10)
+    assert plain.count("-i") == 1
+    cmd = ffmpeg.gif_command(Path("l"), Path("o.gif"), 480, 10, overlay=Path("ov"), overlay_margin=6)
+    fc = cmd[cmd.index("-filter_complex") + 1]
+    assert cmd.count("-i") == 2 and "scale=480:-2" in fc and "overlay=x=W-w-6" in fc
+    assert fc.index("overlay") < fc.index("palettegen")

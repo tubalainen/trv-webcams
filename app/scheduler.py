@@ -30,6 +30,16 @@ def build_scheduler(settings: Settings, jobs: JobQueue) -> AsyncIOScheduler:
             await collector.sync_metadata(settings)
         except Exception:  # noqa: BLE001
             log.exception("Metadata sync failed")
+        try:
+            await collector.sync_weather_stations(settings)
+        except Exception:  # noqa: BLE001
+            log.exception("Road weather station sync failed")
+
+    async def temps():
+        try:
+            await collector.collect_road_temps(settings)
+        except Exception:  # noqa: BLE001
+            log.exception("Road temperature collection failed")
 
     async def nightly():
         try:
@@ -44,6 +54,13 @@ def build_scheduler(settings: Settings, jobs: JobQueue) -> AsyncIOScheduler:
         IntervalTrigger(minutes=settings.collect_interval_minutes),
         id="collect",
         name="Hämta bilder",
+        **common,
+    )
+    sched.add_job(
+        temps,
+        IntervalTrigger(minutes=settings.temp_collect_interval_minutes),
+        id="temps",
+        name="Hämta vägtemperatur",
         **common,
     )
     sched.add_job(

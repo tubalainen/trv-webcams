@@ -68,6 +68,8 @@ a { color: var(--accent); }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin: 0; }
 .card h2 { margin-top: 0; font-size: 1.15em; }
 .card img, .card video { width: 100%; border-radius: 6px; display: block; background: #000; }
+.temp-setting { margin: 0 0 14px; }
+.temp-setting p { margin: 6px 0 0; }
 .period-checks { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 14px; }
 .job-status { margin-top: 10px; font-size: .92em; }
 .job-status pre { white-space: pre-wrap; font-size: .85em; background: var(--tab); padding: 8px; border-radius: 6px; }

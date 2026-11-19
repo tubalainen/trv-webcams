@@ -7,14 +7,14 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app import __version__, collector, storage
 from app.config import get_settings
-from app.db import Camera, Job, Timelapse, session_scope
+from app.db import Camera, Job, RoadTemperature, Timelapse, WeatherStation, session_scope
 from app.timelapse import PERIODS
 
 router = APIRouter()
@@ -126,7 +126,10 @@ def get_camera(camera_id: str) -> dict:
             photo_url=cam.photo_url,
             last_photo_time=cam.last_photo_time,
             snapshot_count=cam.snapshot_count,
+            temp_overlay=cam.temp_overlay,
         )
+        data["temp_station"] = _station_info(s, cam)
+        data["temp_station_max_km"] = settings.temp_station_max_km
         tls = s.scalars(select(Timelapse).where(Timelapse.camera_id == camera_id)).all()
         data["timelapses"] = {}
         for t in tls:
@@ -142,6 +145,7 @@ def get_camera(camera_id: str) -> dict:
                 "created_at": _iso(t.created_at),
                 "range_start": _iso(t.range_start),
                 "range_end": _iso(t.range_end),
+                "temp_station": t.temp_station,
             }
         job = s.scalars(select(Job).where(Job.camera_id == camera_id).order_by(Job.id.desc())).first()
         data["last_job"] = _job_dict(job) if job else None
@@ -150,16 +154,51 @@ def get_camera(camera_id: str) -> dict:
     return data
 
 
+def _station_info(s, cam: Camera) -> dict | None:
+    """Linked road weather station and its latest stored road temperature."""
+    if not cam.station_id:
+        return None
+    st = s.get(WeatherStation, cam.station_id)
+    last = s.scalars(
+        select(RoadTemperature)
+        .where(RoadTemperature.station_id == cam.station_id)
+        .order_by(RoadTemperature.sample.desc())
+        .limit(1)
+    ).first()
+    return {
+        "id": cam.station_id,
+        "name": st.name if st else cam.station_id,
+        "distance_km": cam.station_distance_km,
+        "last_value": last.value if last else None,
+        "last_sample": _iso(last.sample) if last else None,
+    }
+
+
+def _backfill_temps(background: BackgroundTasks) -> None:
+    """Fetch road temperatures (7 days back) for newly enabled cameras after the response."""
+    settings = get_settings()
+    if settings.scheduler_enabled and settings.trv_api_key:
+        background.add_task(collector.collect_road_temps, settings)
+
+
 class CameraUpdate(BaseModel):
-    enabled: bool
+    enabled: bool | None = None
+    temp_overlay: bool | None = None
 
 
 @router.patch("/api/cameras/{camera_id}")
-def update_camera(camera_id: str, body: CameraUpdate) -> dict:
+def update_camera(camera_id: str, body: CameraUpdate, background: BackgroundTasks) -> dict:
     with session_scope() as s:
         cam = _get_camera(s, camera_id)
-        cam.enabled = body.enabled
-        return _camera_summary(cam)
+        if body.enabled is not None:
+            cam.enabled = body.enabled
+        if body.temp_overlay is not None:
+            cam.temp_overlay = body.temp_overlay
+        data = _camera_summary(cam)
+        data["temp_overlay"] = cam.temp_overlay
+    if body.enabled:
+        _backfill_temps(background)
+    return data
 
 
 class BulkUpdate(BaseModel):
@@ -169,7 +208,7 @@ class BulkUpdate(BaseModel):
 
 
 @router.post("/api/cameras/bulk")
-def bulk_update(body: BulkUpdate) -> dict:
+def bulk_update(body: BulkUpdate, background: BackgroundTasks) -> dict:
     with session_scope() as s:
         stmt = select(Camera)
         if body.county is not None:
@@ -182,6 +221,8 @@ def bulk_update(body: BulkUpdate) -> dict:
         for cam in s.scalars(stmt):
             cam.enabled = body.enabled
             n += 1
+    if body.enabled:
+        _backfill_temps(background)
     return {"updated": n}
 
 

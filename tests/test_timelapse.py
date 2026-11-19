@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import select
 
 from app import storage
-from app.db import Camera, Job, Timelapse, session_scope
+from app.db import Camera, Job, RoadTemperature, Timelapse, WeatherStation, session_scope
 from app.timelapse import PERIODS, Encoder, JobQueue, generate, subsample
 
 TZ = ZoneInfo("Europe/Stockholm")
@@ -74,6 +74,74 @@ async def test_generate_cpu(settings):
     with session_scope() as s:
         kinds = {t.kind: t.encoder for t in s.scalars(select(Timelapse))}
     assert kinds == {"mp4": "libx264", "gif": "gif"}
+
+
+@needs_ffmpeg
+async def test_generate_with_temperature_overlay(settings):
+    now = datetime.now(TZ).replace(microsecond=0)
+    with session_scope() as s:
+        s.add(WeatherStation(id="222", name="Stocksund"))
+        s.add(Camera(id="CAM_T", enabled=True, station_id="222", station_distance_km=1.2))
+        for i in range(0, 24 * 12):
+            t = (now - timedelta(minutes=5 * i)).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+            s.add(RoadTemperature(station_id="222", sample=t, value=-2 + i * 0.01))
+    _make_frames(settings, "CAM_T", now, 30)
+
+    msg = await generate(settings, Encoder(settings), "CAM_T", "1d", now=now)
+    assert "vägtemp. Stocksund" in msg
+    with session_scope() as s:
+        rows = s.scalars(select(Timelapse).where(Timelapse.camera_id == "CAM_T")).all()
+        assert {r.temp_station for r in rows} == {"Stocksund"}
+    mp4 = storage.timelapse_path(settings, "CAM_T", "1d", "mp4")
+    gif = storage.timelapse_path(settings, "CAM_T", "1d", "gif")
+    assert mp4.stat().st_size > 0 and gif.read_bytes()[:3] == b"GIF"
+
+    # The bottom right corner of the video now differs from the plain test image
+    def corner(path):
+        out = subprocess.run(
+            [
+                "ffmpeg",
+                "-loglevel",
+                "error",
+                "-i",
+                str(path),
+                "-frames:v",
+                "1",
+                "-vf",
+                "crop=40:20:iw-60:ih-30",
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "gray",
+                "-",
+            ],
+            capture_output=True,
+            check=True,
+        ).stdout
+        return sum(out) / len(out)
+
+    with_graph = corner(mp4)
+    with session_scope() as s:
+        s.get(Camera, "CAM_T").temp_overlay = False
+    msg = await generate(settings, Encoder(settings), "CAM_T", "1d", now=now)
+    assert "vägtemp" not in msg
+    assert abs(corner(mp4) - with_graph) > 3
+
+
+async def test_generate_overlay_notes(settings):
+    now = datetime.now(TZ)
+    with session_scope() as s:
+        s.add(Camera(id="CAM_N", enabled=True))
+    from app.timelapse import temp_graph_for
+
+    graph, note = temp_graph_for(settings, "CAM_N", now - timedelta(days=1), now)
+    assert graph is None and "inom 20 km" in note
+    with session_scope() as s:
+        s.get(Camera, "CAM_N").station_id = "999"
+    graph, note = temp_graph_for(settings, "CAM_N", now - timedelta(days=1), now)
+    assert graph is None and "ingen vägtemperatur" in note
+    graph, note = temp_graph_for(settings, "CAM_N", now - timedelta(days=1), now, enabled=False)
+    assert graph is None and note == ""
 
 
 async def test_generate_too_few(settings):

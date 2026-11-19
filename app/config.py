@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     gif_fps: int = 10
     gif_max_frames: int = 150
 
+    # Road temperature graph (Trafikverket road weather stations)
+    temp_station_max_km: float = 20.0  # no graph when the nearest station is further away
+    temp_collect_interval_minutes: int = 15
+
     # Cameras enabled on first start (comma separated camera ids)
     default_enabled_cameras: str = ""
 

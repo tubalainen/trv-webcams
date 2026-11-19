@@ -173,6 +173,11 @@ def fit_filter(width: int, height: int) -> str:
     return f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1"
 
 
+def overlay_position(margin: int) -> str:
+    """Bottom right corner, `margin` pixels from the edges."""
+    return f"x=W-w-{margin}:y=H-h-{margin}"
+
+
 def mp4_command(
     concat: Path,
     out: Path,
@@ -181,12 +186,22 @@ def mp4_command(
     width: int,
     height: int,
     vaapi_device: str = "/dev/dri/renderD128",
+    overlay: Path | None = None,
+    overlay_margin: int = 12,
 ) -> list[str]:
+    """MP4 from an ffconcat image list, optionally with a second ffconcat list of RGBA
+    PNGs (same frame timing) composited in the bottom right corner on the CPU before
+    the frames are handed to the encoder."""
     cmd = [FFMPEG, "-y", "-hide_banner", "-loglevel", "error", "-nostdin"]
     if enc.mode == "vaapi":
         cmd += ["-vaapi_device", vaapi_device]
     cmd += ["-f", "concat", "-safe", "0", "-i", str(concat)]
     vf = fit_filter(width, height)
+    if overlay is not None:
+        cmd += ["-f", "concat", "-safe", "0", "-i", str(overlay)]
+        pos = overlay_position(overlay_margin)
+        # The encoder-specific format/upload filters below are appended to this chain
+        vf = f"[0:v]{vf}[bg];[1:v]format=rgba[ov];[bg][ov]overlay={pos}:eof_action=pass"
     if enc.mode == "nvidia":
         vf += ",format=yuv420p"
         codec = [
@@ -215,7 +230,7 @@ def mp4_command(
         vf += ",format=yuv420p"
         codec = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-profile:v", "high"]
     cmd += [
-        "-vf",
+        "-filter_complex" if overlay is not None else "-vf",
         vf,
         "-fps_mode",
         "cfr",
@@ -232,12 +247,30 @@ def mp4_command(
     return cmd
 
 
-def gif_command(concat: Path, out: Path, width: int, fps: int) -> list[str]:
-    vf = (
-        f"fps={fps},scale={width}:-2:flags=lanczos,split[a][b];"
-        "[a]palettegen=stats_mode=diff:max_colors=128[p];"
+def gif_command(
+    concat: Path,
+    out: Path,
+    width: int,
+    fps: int,
+    overlay: Path | None = None,
+    overlay_margin: int = 6,
+) -> list[str]:
+    """GIF from an ffconcat image list. The optional overlay list is composited after
+    scaling to `width`, so it should be rendered for that width."""
+    palette = (
+        "split[a][b];[a]palettegen=stats_mode=diff:max_colors=128[p];"
         "[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle"
     )
+    scaled = f"fps={fps},scale={width}:-2:flags=lanczos"
+    inputs = ["-f", "concat", "-safe", "0", "-i", str(concat)]
+    if overlay is None:
+        vf = f"{scaled},{palette}"
+    else:
+        inputs += ["-f", "concat", "-safe", "0", "-i", str(overlay)]
+        vf = (
+            f"[0:v]{scaled}[bg];[1:v]fps={fps},format=rgba[ov];"
+            f"[bg][ov]overlay={overlay_position(overlay_margin)}:eof_action=pass,{palette}"
+        )
     return [
         FFMPEG,
         "-y",
@@ -245,12 +278,7 @@ def gif_command(concat: Path, out: Path, width: int, fps: int) -> list[str]:
         "-loglevel",
         "error",
         "-nostdin",
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        str(concat),
+        *inputs,
         "-filter_complex",
         vf,
         "-loop",
