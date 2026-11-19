@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM python:3.12-slim-trixie AS builder
+FROM python:3.15-slim-trixie AS builder
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /build
 COPY requirements.txt .
@@ -9,7 +9,7 @@ RUN python -m venv /opt/venv \
  && /opt/venv/bin/pip install -r requirements.txt \
  && /opt/venv/bin/pip uninstall -y pip
 
-FROM python:3.12-slim-trixie
+FROM python:3.15-slim-trixie
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="trv-webcams" \
       org.opencontainers.image.description="Timelapses från Trafikverkets webbkameror" \
@@ -23,7 +23,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg tzdata ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  # pip is not needed at runtime; removing it shrinks the attack surface
- && rm -rf /usr/local/lib/python3.12/site-packages/pip* /usr/local/bin/pip* \
+ && rm -rf /usr/local/lib/python3*/site-packages/pip* /usr/local/bin/pip* \
  && useradd --system --uid 1000 --create-home --home-dir /home/app app \
  && mkdir -p /data && chown app:app /data
 
