@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM python:3.12-slim-trixie AS builder
+FROM python:3.15-slim-trixie AS builder
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /build
 COPY requirements.txt .
@@ -9,7 +9,7 @@ RUN python -m venv /opt/venv \
  && /opt/venv/bin/pip install -r requirements.txt \
  && /opt/venv/bin/pip uninstall -y pip
 
-FROM python:3.12-slim-trixie
+FROM python:3.15-slim-trixie
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="trv-webcams" \
       org.opencontainers.image.description="Timelapses från Trafikverkets webbkameror" \
