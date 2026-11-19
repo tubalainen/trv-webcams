@@ -29,10 +29,14 @@ def test_api_flow(settings):
         assert c.get("/api/cameras", params={"q": "kir"}).json()[0]["id"] == "CAM_2"
 
         assert c.patch("/api/cameras/CAM_1", json={"enabled": True}).json()["enabled"] is True
-        r = c.patch("/api/cameras/CAM_1", json={"temp_overlay": False}).json()
+        r = c.patch("/api/cameras/CAM_1", json={"temp_overlay_mode": "off"}).json()
         assert r["temp_overlay"] is False and r["enabled"] is True
-        assert c.get("/api/cameras/CAM_1").json()["temp_overlay"] is False
-        assert c.get("/api/cameras/CAM_1").json()["temp_station"] is None
+        d = c.get("/api/cameras/CAM_1").json()
+        assert d["temp_overlay_mode"] == "off" and d["temp_overlay"] is False and d["temp_station"] is None
+        assert c.patch("/api/cameras/CAM_1", json={"temp_overlay_mode": "maybe"}).status_code == 400
+        r = c.patch("/api/cameras/CAM_1", json={"resolution_mode": "high"}).json()
+        assert r["resolution_mode"] == "high" and r["saves_fullsize"] is False  # no full size image
+        assert c.patch("/api/cameras/CAM_1", json={"resolution_mode": "4k"}).status_code == 400
         assert [x["id"] for x in c.get("/api/cameras", params={"enabled": True}).json()] == ["CAM_1"]
         assert c.post("/api/cameras/bulk", json={"county": 25, "enabled": True}).json() == {"updated": 1}
 

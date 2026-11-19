@@ -68,8 +68,16 @@ a { color: var(--accent); }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin: 0; }
 .card h2 { margin-top: 0; font-size: 1.15em; }
 .card img, .card video { width: 100%; border-radius: 6px; display: block; background: #000; }
-.temp-setting { margin: 0 0 14px; }
-.temp-setting p { margin: 6px 0 0; }
+.cam-settings { margin: 0 0 14px; display: grid; gap: 4px; }
+.cam-settings p { margin: 0 0 8px; }
+.field { display: grid; gap: 4px; font-weight: 500; }
+.field select, .field input { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--text); font: inherit; font-weight: 400; }
+.badge { display: inline-block; padding: 0 6px; border-radius: 999px; border: 1px solid var(--border);
+  font-size: .78em; line-height: 1.5; color: var(--muted); vertical-align: 1px; }
+.badge.on { border-color: var(--on); color: var(--on); }
+.topbar nav { display: flex; gap: 14px; align-items: center; }
+.topbar nav a { text-decoration: none; }
 .period-checks { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 14px; }
 .job-status { margin-top: 10px; font-size: .92em; }
 .job-status pre { white-space: pre-wrap; font-size: .85em; background: var(--tab); padding: 8px; border-radius: 6px; }
@@ -99,3 +107,20 @@ a { color: var(--accent); }
 .viewer .nav:disabled { opacity: .2; cursor: default; }
 .viewer-caption { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; justify-content: space-between;
   margin-top: 8px; min-height: 28px; }
+
+/* Admin */
+.admin-page { max-width: 860px; margin: 0 auto; padding: 16px; }
+.admin-page h1 { margin: 4px 0 12px; }
+.admin-page fieldset { margin: 0 0 16px; }
+.admin-page legend { font-weight: 600; padding: 0 6px; }
+.admin-page .setting { margin: 10px 0 14px; }
+.admin-page .setting p { margin: 4px 0 0; }
+.admin-page pre, .admin-page code { background: var(--tab); border-radius: 4px; padding: 1px 5px; }
+.admin-page pre { padding: 8px; }
+.admin-info { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 14px; color: var(--muted); font-size: .92em; }
+.admin-actions { display: flex; gap: 12px; align-items: center; position: sticky; bottom: 0; padding: 10px 0;
+  background: var(--bg); }
+.login { max-width: 360px; display: grid; gap: 12px; }
+.with-unit { display: flex; gap: 8px; align-items: center; }
+.with-unit input { width: 9em; }
+.linklike { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }

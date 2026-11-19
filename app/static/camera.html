@@ -12,6 +12,7 @@
   <header class="topbar">
     <a class="brand" href="./">← Alla kameror</a>
     <div id="status" class="status"></div>
+    <nav><a href="admin.html">⚙ Admin</a></nav>
   </header>
 
   <main class="camera-page">
@@ -44,13 +45,17 @@
         <p class="muted">Timelapses genereras automatiskt varje natt för aktiva kameror.
           Du kan också generera dem direkt.</p>
         <div id="periodChecks" class="period-checks"></div>
-        <div class="temp-setting">
-          <label class="switch">
-            <input type="checkbox" id="tempOverlay">
-            <span class="slider"></span>
-            <span class="switch-label">Temperaturgraf (vägtemperatur)</span>
+        <div class="cam-settings">
+          <label class="field">
+            <span>Temperaturgraf (vägtemperatur)</span>
+            <select id="tempMode" aria-describedby="stationInfo"></select>
           </label>
           <p class="muted" id="stationInfo"></p>
+          <label class="field">
+            <span>Bildupplösning</span>
+            <select id="resMode" aria-describedby="resInfo"></select>
+          </label>
+          <p class="muted" id="resInfo"></p>
         </div>
         <button id="generate" class="btn">Generera timelapse</button>
         <div id="jobStatus" class="job-status"></div>

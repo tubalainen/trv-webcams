@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
-from app import __version__, collector, storage
+from app import __version__, cameras, collector, storage
 from app.config import get_settings
 from app.db import Camera, Job, RoadTemperature, Timelapse, WeatherStation, session_scope
 from app.timelapse import PERIODS
@@ -43,9 +43,6 @@ COUNTIES = {
     25: "Norrbotten",
 }
 
-# Approximate storage per enabled camera per day (normal size, every 5 min)
-EST_BYTES_PER_IMAGE = 27_000
-
 
 def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat() + "Z" if dt else None
@@ -62,6 +59,8 @@ def _camera_summary(c: Camera) -> dict:
         "county": COUNTIES.get(c.county_no or 0, ""),
         "enabled": c.enabled,
         "trv_active": c.trv_active,
+        "hd": cameras.hd_label(c),
+        "saves_hd": c.enabled and cameras.wants_fullsize(c, get_settings()),
     }
 
 
@@ -126,7 +125,18 @@ def get_camera(camera_id: str) -> dict:
             photo_url=cam.photo_url,
             last_photo_time=cam.last_photo_time,
             snapshot_count=cam.snapshot_count,
-            temp_overlay=cam.temp_overlay,
+            temp_overlay_mode=cam.temp_overlay_mode,
+            temp_overlay=cameras.wants_temp_overlay(cam, settings),
+            temp_overlay_default=settings.temp_overlay_default,
+            resolution_mode=cam.resolution_mode,
+            resolution_default="high" if settings.trv_fullsize else "low",
+            fullsize={
+                "available": cameras.fullsize_available(cam),
+                "width": cam.fullsize_width,
+                "height": cam.fullsize_height,
+                "checked_at": _iso(cam.fullsize_checked_at),
+            },
+            saves_fullsize=cameras.wants_fullsize(cam, settings),
         )
         data["temp_station"] = _station_info(s, cam)
         data["temp_station_max_km"] = settings.temp_station_max_km
@@ -183,7 +193,8 @@ def _backfill_temps(background: BackgroundTasks) -> None:
 
 class CameraUpdate(BaseModel):
     enabled: bool | None = None
-    temp_overlay: bool | None = None
+    temp_overlay_mode: str | None = None  # default | on | off
+    resolution_mode: str | None = None  # default | high | low
 
 
 @router.patch("/api/cameras/{camera_id}")
@@ -192,10 +203,22 @@ def update_camera(camera_id: str, body: CameraUpdate, background: BackgroundTask
         cam = _get_camera(s, camera_id)
         if body.enabled is not None:
             cam.enabled = body.enabled
-        if body.temp_overlay is not None:
-            cam.temp_overlay = body.temp_overlay
+        if body.temp_overlay_mode is not None:
+            if body.temp_overlay_mode not in cameras.TEMP_MODES:
+                raise HTTPException(400, "temp_overlay_mode ska vara default, on eller off")
+            cam.temp_overlay_mode = body.temp_overlay_mode
+        if body.resolution_mode is not None:
+            if body.resolution_mode not in cameras.RESOLUTION_MODES:
+                raise HTTPException(400, "resolution_mode ska vara default, high eller low")
+            cam.resolution_mode = body.resolution_mode
         data = _camera_summary(cam)
-        data["temp_overlay"] = cam.temp_overlay
+        settings = get_settings()
+        data.update(
+            temp_overlay_mode=cam.temp_overlay_mode,
+            temp_overlay=cameras.wants_temp_overlay(cam, settings),
+            resolution_mode=cam.resolution_mode,
+            saves_fullsize=cameras.wants_fullsize(cam, settings),
+        )
     if body.enabled:
         _backfill_temps(background)
     return data
@@ -343,16 +366,21 @@ async def status(request: Request) -> dict:
     settings = get_settings()
     with session_scope() as s:
         total = s.scalar(select(func.count()).select_from(Camera)) or 0
-        enabled = s.scalar(select(func.count()).select_from(Camera).where(Camera.enabled)) or 0
+        enabled_cams = list(s.scalars(select(Camera).where(Camera.enabled)))
+        enabled = len(enabled_cams)
+        image_bytes = [
+            cameras.BYTES_HIGH if cameras.wants_fullsize(c, settings) else cameras.BYTES_LOW
+            for c in enabled_cams
+        ]
         queued = (
             s.scalar(select(func.count()).select_from(Job).where(Job.status.in_(["queued", "running"]))) or 0
         )
     usage = await asyncio.to_thread(_usage)
     disk = shutil.disk_usage(settings.data_dir)
-    per_day = EST_BYTES_PER_IMAGE * (1440 // max(1, settings.collect_interval_minutes))
-    est_total = enabled * (
-        per_day * settings.snapshot_retention_days
-        + EST_BYTES_PER_IMAGE * 24 * settings.archive_retention_days
+    per_day_images = 1440 // max(1, settings.collect_interval_minutes)
+    est_total = sum(
+        b * (per_day_images * settings.snapshot_retention_days + 24 * settings.archive_retention_days)
+        for b in image_bytes
     )
     sched = getattr(request.app.state, "scheduler", None)
     next_runs = {}
@@ -377,6 +405,7 @@ async def status(request: Request) -> dict:
         "archive_retention_days": settings.archive_retention_days,
         "next_runs": next_runs,
         "api_key_configured": bool(settings.trv_api_key),
+        "admin_enabled": bool(settings.admin_password),
     }
 
 

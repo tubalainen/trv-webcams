@@ -34,6 +34,10 @@ def build_scheduler(settings: Settings, jobs: JobQueue) -> AsyncIOScheduler:
             await collector.sync_weather_stations(settings)
         except Exception:  # noqa: BLE001
             log.exception("Road weather station sync failed")
+        try:
+            await collector.probe_fullsize(settings)
+        except Exception:  # noqa: BLE001
+            log.exception("Full size image check failed")
 
     async def temps():
         try:
@@ -78,3 +82,12 @@ def build_scheduler(settings: Settings, jobs: JobQueue) -> AsyncIOScheduler:
         **common,
     )
     return sched
+
+
+def reschedule(sched: AsyncIOScheduler, settings: Settings) -> None:
+    """Apply changed intervals and times from the admin page to the running scheduler."""
+    sched.reschedule_job("collect", trigger=IntervalTrigger(minutes=settings.collect_interval_minutes))
+    sched.reschedule_job("temps", trigger=IntervalTrigger(minutes=settings.temp_collect_interval_minutes))
+    sched.reschedule_job(
+        "nightly", trigger=CronTrigger(hour=settings.nightly_hour, minute=settings.nightly_minute)
+    )

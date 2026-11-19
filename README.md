@@ -8,6 +8,8 @@ Webbapplikation som sparar bilder från Trafikverkets webbkameror och skapar tim
 - Knappen **"Generera timelapse"** på varje kamerasida skapar en timelapse direkt.
 - **Graf med vägtemperatur** i timelapses och GIF:ar. Grafen hämtar data från närmaste vägväderstation inom 20 km och ritas fram bild för bild. Den är påslagen som standard och kan stängas av per kamera.
 - **Retention:** alla bilder sparas i 90 dagar. Den första bilden varje timme sparas i ett glest arkiv i 365 dagar, så att det går att göra årsklippet.
+- **Admin-sida** (`/admin.html`, skyddad med `ADMIN_PASSWORD`) där globala inställningar ändras direkt, utan omstart.
+- **Hög- eller lågupplösta bilder** (1280×720/1920×1080 eller 385×217). Standarden sätts i admin och kan ändras per kamera. Listan och kartan märker kameror som har högupplösta bilder med till exempel "HD 1080p".
 - Webbgränssnittet lyssnar på port **8933** och är på svenska.
 
 ## Snabbstart
@@ -68,6 +70,38 @@ Statusraden visar hur mycket som används nu och en uppskattning för när reten
 
 Containern startar som root, sätter ägare på `/data` till `PUID:PGID` (standard `1000:1000`) och kör sedan appen som den användaren. En `./data`-mapp som Docker har skapat som root fungerar därför direkt. Ägaren ändras bara när något i `/data` har fel ägare. Kör du containern med `user:` i compose eller `--user` hoppas det steget över, och då måste mappen redan vara skrivbar för den användaren.
 
+## Admin
+
+Admin-sidan (`⚙ Admin` i toppraden) samlar de globala inställningarna:
+- standard för bildupplösning och temperaturgraf
+- hämtningsintervall
+- tid för nattkörningen
+- retention
+- hårdvaruacceleration och antal samtidiga jobb
+- video- och GIF-inställningar
+- avstånd till vägväderstation
+
+Ändringarna sparas i databasen och gäller direkt. Schemat uppdateras, en ändrad hårdvaruacceleration gör en ny GPU-kontroll, och antalet jobb ändras när pågående jobb är klara. Värdena i `.env` används som standard tills de ändras i admin, och varje inställning kan återställas till `.env`-värdet.
+
+Admin kräver ett lösenord:
+
+```bash
+ADMIN_PASSWORD=ett-långt-lösenord   # i .env, starta sedan om containern
+```
+
+Utan `ADMIN_PASSWORD` är admin-sidan avstängd. Inloggningen gäller i 7 dagar (HttpOnly-cookie), och den upphör om lösenordet byts. Resten av appen är öppen som tidigare. Kör den i ett betrott nät eller bakom en egen proxy. Hemligheter och infrastruktur (`TRV_API_KEY`, `ADMIN_PASSWORD`, `DATA_DIR`, `PORT`, `PUID`/`PGID`, `TIMEZONE`) sätts bara i `.env`.
+
+## Hög- eller lågupplösta bilder
+
+| | Lågupplöst | Högupplöst |
+|---|---|---|
+| Trafikflödeskameror | 385×217, cirka 28 kB | oftast 1280×720, cirka 130 kB |
+| Väglagskameror | 385×217, cirka 14–28 kB | 1920×1080, cirka 160 kB |
+
+Appen läser den faktiska upplösningen på varje kamerans högupplösta bild en gång i veckan. Den läser bara JPEG-huvudet, inte hela bilden. Kameror med högupplöst bild märks till exempel "HD 1080p" i listan och kartan, och märket är grönt när kameran sparar högupplöst. Kamerasidan visar upplösningen och vad som sparas.
+
+Standarden sätts i admin. På kamerasidan väljer du "Standard", "Högupplöst" eller "Lågupplöst" för just den kameran. Har kameran ingen högupplöst bild sparas lågupplöst. Valet gäller nya bilder. Timelapse-videon får samma upplösning som bilderna, och GIF:en förblir 480 px bred. Högupplöst tar ungefär 5 gånger mer plats, cirka 3,6 GB per kamera under 90 dagar med en bild var 5:e minut, och lagringsuppskattningen i statusraden räknar med det.
+
 ## Vägtemperatur i timelapses
 
 Nere till höger i varje timelapse och GIF visas en liten graf över **vägytans temperatur**:
@@ -77,19 +111,21 @@ Nere till höger i varje timelapse och GIF visas en liten graf över **vägytans
 
 - **Datakälla:** Trafikverkets vägväderstationer (`WeatherMeasurepoint`/`WeatherObservation`). Varje kamera kopplas till närmaste station *som mäter vägytans temperatur* inom `TEMP_STATION_MAX_KM` (standard 20 km). Stationen och det senaste värdet visas på kamerasidan.
 - **Historik:** Trafikverket sparar bara cirka 7 dygns mätningar. Appen hämtar därför vägtemperaturen var 15:e minut för stationerna som hör till aktiva kameror och sparar den i 365 dagar, lika länge som årsarkivet. När en kamera aktiveras hämtas de senaste 7 dygnen direkt. Grafer för längre perioder fylls på med tiden, och det som saknas lämnas tomt.
-- **Av och på:** grafen är påslagen som standard i nattkörningen. Under *Generera timelapse* på kamerasidan kan den stängas av för just den kameran.
+- **Av och på:** grafen är påslagen som standard (i admin). På kamerasidan väljer du "Standard", "På" eller "Av" för just den kameran. Valet gäller både nattkörningen och knappen *Generera timelapse*.
 - **Upplösning:** Trafikverkets normala bilder är bara cirka 384 pixlar breda. Videon skalas därför upp till minst 768 pixlars bredd, så att grafens text går att läsa.
 
 ## Konfiguration
 
-Alla inställningar finns i [`.env.example`](.env.example). De viktigaste:
+Alla inställningar finns i [`.env.example`](.env.example). Allt utom hemligheter och infrastruktur kan också ändras på admin-sidan, och det som sparas där gäller före `.env`. De viktigaste:
 
 | Variabel | Standard | Beskrivning |
 |----------|----------|-------------|
 | `TRV_API_KEY` | – | **Krävs.** Trafikverkets API-nyckel |
+| `ADMIN_PASSWORD` | – | Lösenord för admin-sidan. Tomt stänger av admin |
 | `HOST_PORT` | `8933` | Port på värden (docker compose) |
 | `COLLECT_INTERVAL_MINUTES` | `5` | Hur ofta bilder hämtas |
-| `TRV_FULLSIZE` | `false` | Hämta bilder i full storlek (cirka 4 gånger större) |
+| `TRV_FULLSIZE` | `false` | Standard för bildupplösning: högupplöst (`true`) eller lågupplöst |
+| `TEMP_OVERLAY_DEFAULT` | `true` | Standard för temperaturgraf i timelapses |
 | `SNAPSHOT_RETENTION_DAYS` | `90` | Hur länge alla bilder sparas |
 | `ARCHIVE_RETENTION_DAYS` | `365` | Hur länge timarkivet sparas |
 | `NIGHTLY_HOUR` / `NIGHTLY_MINUTE` | `2` / `0` | När nattkörningen startar |
