@@ -319,13 +319,15 @@ async def status(request: Request) -> dict:
         for job in sched.get_jobs():
             nrt = getattr(job, "next_run_time", None)
             next_runs[job.id] = nrt.isoformat() if nrt else None
-    enc = request.app.state.jobs.encoder._choice
+    encoder = request.app.state.jobs.encoder
+    enc = encoder._choice
     return {
         "version": __version__,
         "cameras_total": total,
         "cameras_enabled": enabled,
         "jobs_pending": queued,
         "encoder": {"mode": enc.mode, "codec": enc.codec} if enc else None,
+        "gpus": encoder.gpus or [],
         "usage": usage,
         "disk_free_bytes": disk.free,
         "disk_total_bytes": disk.total,

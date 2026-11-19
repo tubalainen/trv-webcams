@@ -69,11 +69,15 @@ class Encoder:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._choice: ffmpeg.EncoderChoice | None = None
+        self.gpus: list[str] | None = None
 
     @property
     def choice(self) -> ffmpeg.EncoderChoice:
         if self._choice is None:
-            self._choice = ffmpeg.detect_encoder(self.settings.hwaccel, self.settings.vaapi_device)
+            self.gpus = ffmpeg.nvidia_gpus()
+            self._choice = ffmpeg.detect_encoder(
+                self.settings.hwaccel, self.settings.vaapi_device, gpus=self.gpus
+            )
         return self._choice
 
     def downgrade(self) -> None:

@@ -36,7 +36,16 @@ docker run -d --name trv-webcams --gpus all -p 8933:8933 \
 | `qsv` | `h264_qsv` | Intel Quick Sync |
 | `cpu` | `libx264` | – |
 
-Med `HWACCEL=auto` (standard) provar appen vid start kodarna i ordningen NVIDIA → VAAPI → QSV → CPU och väljer den första som fungerar. Om en GPU-kodning misslyckas under körning gör appen om den på CPU. Statusraden i gränssnittet och `/api/status` visar vilken kodare som används. GIF-filer skapas alltid på CPU med `palettegen`/`paletteuse`, eftersom det inte finns någon GPU-kodare för GIF.
+Med `HWACCEL=auto` (standard) provar appen vid start kodarna i ordningen NVIDIA → VAAPI → QSV → CPU och väljer den första som fungerar. Resultatet skrivs i containerns logg (`docker compose logs trv-webcams`): vilket NVIDIA-kort som syns (via `nvidia-smi`), om varje kodare fungerade eller varför den inte gjorde det, och vilken kodare som används:
+
+```
+INFO app.ffmpeg: Hardware acceleration check (HWACCEL=auto)
+INFO app.ffmpeg:   NVIDIA GPU found: NVIDIA GeForce RTX 3060 (driver 550.120, 12288 MiB)
+INFO app.ffmpeg:   nvidia h264_nvenc  OK
+INFO app.ffmpeg: Using video encoder h264_nvenc (GPU)
+```
+
+Om ingen GPU syns i containern loggas en varning med tips om NVIDIA Container Toolkit och `deploy`-blocket i compose-filen. Om en GPU-kodning misslyckas under körning gör appen om den på CPU. Statusraden i gränssnittet och `/api/status` visar vilken kodare som används. GIF-filer skapas alltid på CPU med `palettegen`/`paletteuse`, eftersom det inte finns någon GPU-kodare för GIF.
 
 Imagen bygger på Debians ffmpeg-paket, som har stöd för NVENC/NVDEC, VAAPI och QSV. NVIDIA-biblioteken laddas från värdens drivrutin när containern körs.
 

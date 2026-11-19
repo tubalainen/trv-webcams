@@ -40,7 +40,8 @@ async function loadStatus() {
       `<span title="Aktiva / totalt">🎥 ${s.cameras_enabled} / ${s.cameras_total} aktiva</span>` +
       `<span title="Bilder + timelapses">💾 ${fmtBytes(s.usage.snapshots_bytes + s.usage.timelapses_bytes)}` +
       ` (≈${fmtBytes(s.estimated_bytes_at_retention)} vid full retention, ${fmtBytes(s.disk_free_bytes)} ledigt)</span>` +
-      `<span title="Videokodare">⚙️ ${esc(enc)}</span>` +
+      `<span title="${esc(s.gpus && s.gpus.length ? `GPU: ${s.gpus.join(", ")}` : "Videokodare")}">⚙️ ${esc(enc)}` +
+      `${s.encoder ? (s.encoder.mode === "cpu" ? " (CPU)" : " (GPU)") : ""}</span>` +
       (s.jobs_pending ? `<span>⏳ ${s.jobs_pending} jobb i kö</span>` : "") + warn;
   } catch (e) {
     el.textContent = "Status ej tillgänglig";
