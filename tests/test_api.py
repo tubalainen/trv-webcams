@@ -127,3 +127,35 @@ def test_clip_media_uses_current_data_dir(settings):
         clip = c.get("/api/cameras/CAM_1/clips").json()[0]
         assert c.get("/" + clip["mp4"]["url"]).content == b"mp4"
         assert c.get(f"/media/clips/{clip['id']}.gif").status_code == 404  # never outside timelapses/
+
+
+def test_clip_parts_can_be_deleted_by_anyone(settings):
+    from app.db import Clip
+
+    now = datetime(2026, 11, 19, 8)
+    with _client(settings) as c:
+        with session_scope() as s:
+            clip = Clip(camera_id="CAM_1", range_start=now, range_end=now, created_at=now)
+            s.add(clip)
+            s.flush()
+            for kind in ("mp4", "gif"):
+                f = settings.timelapse_dir / "CAM_1" / f"{clip.id}.{kind}"
+                f.parent.mkdir(parents=True, exist_ok=True)
+                f.write_bytes(b"x")
+                setattr(clip, f"{kind}_path", str(f))
+            cid = clip.id
+        r = c.delete(f"/api/cameras/CAM_1/clips/{cid}", params={"kind": "mp4"})
+        assert r.status_code == 200 and r.json()["timelapses"] == 0
+        assert c.get("/api/cameras/CAM_1/clips").json()[0]["mp4"] is None
+        assert c.delete(f"/api/cameras/CAM_2/clips/{cid}").status_code == 404
+        assert c.delete(f"/api/cameras/CAM_1/clips/{cid}", params={"kind": "webm"}).status_code == 400
+        assert c.delete(f"/api/cameras/CAM_1/clips/{cid}", params={"kind": "gif"}).json()["timelapses"] == 1
+        assert c.get("/api/cameras/CAM_1/clips").json() == []
+        assert c.delete(f"/api/cameras/CAM_1/clips/{cid}").status_code == 404
+
+
+def test_ui_files_are_revalidated(settings):
+    with _client(settings) as c:
+        assert c.get("/generate.js").headers["cache-control"] == "no-cache"
+        assert c.get("/").headers["cache-control"] == "no-cache"
+        assert "no-cache" not in c.get("/vendor/leaflet/leaflet.js").headers.get("cache-control", "")

@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
-from app import __version__, cameras, collector, storage, timelapse
+from app import __version__, cameras, cleanup, collector, storage, timelapse
 from app.config import get_settings
 from app.db import Batch, Camera, Clip, Job, RoadTemperature, WeatherStation, session_scope
 
@@ -410,6 +410,17 @@ def get_batch(batch_id: int) -> dict:
         if b is None:
             raise HTTPException(404, "Körningen finns inte")
     return batch_dict(b)
+
+
+@router.delete("/api/cameras/{camera_id}/clips/{clip_id}")
+def delete_clip_part(camera_id: str, clip_id: int, kind: str = "all") -> dict:
+    """Delete a clip's MP4, GIF or both (open to everyone, like generating)."""
+    try:
+        result = cleanup.delete_clip_part(get_settings(), camera_id, clip_id, kind)
+    except cleanup.CleanupError as e:
+        raise HTTPException(404 if "finns inte" in str(e) else 400, str(e)) from None
+    invalidate_usage()
+    return result.as_dict()
 
 
 @router.get("/media/clips/{name}")

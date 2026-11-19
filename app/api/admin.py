@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
@@ -274,6 +275,7 @@ async def purge(body: Purge) -> dict:
 
 class DeleteImages(BaseModel):
     day: str | None = None
+    days: list[str] | None = None
     before: str | None = None
     all: bool = False
 
@@ -281,8 +283,38 @@ class DeleteImages(BaseModel):
 @router.post("/cameras/{camera_id}/delete-images", dependencies=[Depends(require_admin)])
 async def delete_camera_images(camera_id: str, body: DeleteImages) -> dict:
     return await asyncio.to_thread(
-        _run, cleanup.delete_images, camera_id, day=body.day, before=body.before, everything=body.all
+        _run,
+        cleanup.delete_images,
+        camera_id,
+        day=body.day,
+        days=body.days,
+        before=body.before,
+        everything=body.all,
     )
+
+
+@router.get("/cameras/{camera_id}/archive", dependencies=[Depends(require_admin)])
+def list_archive(camera_id: str, day: str) -> dict:
+    """Hourly archive images of one day (for days without snapshots in the admin view)."""
+    if not storage.DAY_RE.match(day):
+        raise HTTPException(400, "Ogiltigt datum, använd ÅÅÅÅ-MM-DD")
+    base = get_settings().archive_dir / storage.safe_id(camera_id) / day
+    frames = (
+        sorted(f.stem for f in base.iterdir() if f.suffix == ".jpg" and storage.IMAGE_NAME_RE.match(f.name))
+        if base.is_dir()
+        else []
+    )
+    return {"day": day, "frames": frames}
+
+
+@router.get("/cameras/{camera_id}/archive/{day}/{name}", dependencies=[Depends(require_admin)])
+def archive_image(camera_id: str, day: str, name: str):
+    if not storage.DAY_RE.match(day) or not storage.IMAGE_NAME_RE.match(name):
+        raise HTTPException(404)
+    path = get_settings().archive_dir / storage.safe_id(camera_id) / day / name
+    if not path.is_file():
+        raise HTTPException(404)
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})
 
 
 @router.delete("/cameras/{camera_id}/snapshots/{day}/{name}", dependencies=[Depends(require_admin)])

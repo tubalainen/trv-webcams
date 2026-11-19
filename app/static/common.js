@@ -29,11 +29,26 @@ const fmtTime = (iso) => {
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => (
   { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+function showVersion(version) {
+  const brand = document.querySelector(".topbar .brand");
+  if (!brand || !version) return;
+  let v = document.getElementById("appVersion");
+  if (!v) {
+    v = document.createElement("span");
+    v.id = "appVersion";
+    v.className = "app-version";
+    brand.insertAdjacentElement("afterend", v);
+  }
+  v.textContent = `v${version}`;
+  v.title = `trv-webcams ${version}`;
+}
+
 async function loadStatus() {
   const el = document.getElementById("status");
   if (!el) return;
   try {
     const s = await api("api/status");
+    showVersion(s.version);
     const enc = s.encoder ? s.encoder.codec : "detekterar…";
     const warn = s.api_key_configured ? "" : ' <b class="warn">TRV_API_KEY saknas!</b>';
     el.innerHTML =

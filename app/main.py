@@ -83,11 +83,23 @@ async def lifespan(app: FastAPI):
         await jobs.stop()
 
 
+class UIStaticFiles(StaticFiles):
+    """The UI files: browsers must revalidate them (ETag), so an upgraded container is
+    picked up at once instead of running old JavaScript from the cache. Vendor libraries
+    (Leaflet) never change between releases and may be cached."""
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if not path.startswith("vendor/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="TRV Webcams", version=__version__, lifespan=lifespan)
     app.include_router(router)
     app.include_router(admin_router)
-    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+    app.mount("/", UIStaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app
 
 

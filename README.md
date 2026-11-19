@@ -9,7 +9,7 @@ Webbapplikation som sparar bilder från Trafikverkets webbkameror och skapar tim
 - **Retention:** alla bilder sparas i 90 dagar. Den första bilden varje timme sparas i ett glest arkiv i 365 dagar, så att det går att göra årsklippet.
 - **Admin-sida** (`/admin.html`, skyddad med `ADMIN_PASSWORD`) där globala inställningar ändras direkt, utan omstart.
 - **Hög- eller lågupplösta bilder** (1280×720/1920×1080 eller 385×217). Standarden sätts i admin och kan ändras per kamera. Listan och kartan märker kameror som har högupplösta bilder med till exempel "HD 1080p".
-- Webbgränssnittet lyssnar på port **8933** och är på svenska.
+- Webbgränssnittet lyssnar på port **8933** och är på svenska. Versionen som körs visas i toppraden, och "Endast aktiva" är förvalt i listan när du har aktiverat kameror.
 
 ## Snabbstart
 
@@ -77,7 +77,7 @@ Timelapses skapas bara när någon trycker på **Generera**. Det finns ingen aut
   - **Tidsspann:** välj ett förval (senaste dygnet, 7, 14 eller 31 dygn, kvartal, år) eller ett eget spann i kalendern, med start- och sluttid. Kalendern markerar dagar med bilder: mörkare för alla bilder, ljusare för dagar som bara har en bild per timme.
     Man kan inte välja längre bak än den första sparade bilden, och förval som skulle börja tidigare går inte att välja. Finns inga bilder alls är rutan spärrad.
   - **Övrigt:** välj MP4, GIF eller båda, längd (10, 30, 60 eller 120 s) och temperaturgraf (standard, på, av).
-  - **Bibliotek:** klippet hamnar i kamerans bibliotek, där det kan spelas upp, laddas ner och tas bort (admin).
+  - **Bibliotek:** klippet hamnar i kamerans bibliotek, där det kan spelas upp och laddas ner. Alla kan ta bort klippets MP4, GIF eller hela klippet, eftersom det går att generera igen. Bilder tas bara bort i admin.
 - **Ett län eller hela Sverige** (admin-sidan, kräver inloggning):
   - Sektionen **Generera för län eller hela Sverige** har samma genereringsruta och ett val av urval.
   - Varje aktiv kamera som har bilder i tidsspannet får ett eget klipp, och kameror utan bilder hoppas över.
@@ -115,17 +115,17 @@ Under **Lagring och rensning** på admin-sidan finns tre verktyg:
   - Välj bilder, timelapses eller båda, och alla kameror eller en kamera.
   - En förhandsräkning visar hur mycket som tas bort innan du bekräftar.
   - Bilder räknas per dag, och klipp efter när de skapades.
-- **Lagring per kamera:** en tabell med bilder, dagar, storlek och timelapses per kamera, med knappar för att ta bort bilder eller timelapses.
+- **Lagring per kamera:** en sammanfattning och en sökbar, sorterbar tabell (störst, flest bilder, äldst, flest klipp eller namn) med bilder, dagar, storlek och klipp per kamera.
+- **Kameravy:** klicka på en kamera i tabellen.
+  - **Kalender:** dagar är färgade efter mängden bilder, ljusblå för dagar som bara har timbilder.
+  - **Markering:** ett klick markerar en dag, och skift-klick ett intervall. Summan av bilder och storlek visas.
+  - **Miniatyrer:** "Visa bilder" visar miniatyrerna för dagen. Ett klick förstorar bilden, och där kan den tas bort.
+  - **Knappar:** ta bort markerade dagar, bilder äldre än ett datum, alla bilder eller alla klipp.
 - **Rensa allt och börja om:** tar bort alla bilder, timelapses, sparad vägtemperatur och jobbhistorik.
   - Aktiva kameror, valen per kamera och inställningarna ligger kvar, så insamlingen fortsätter vid nästa hämtning.
   - Knappen fungerar först när du skriver `RENSA ALLT`.
 
-Som inloggad admin kan du också ta bort data direkt på kamerasidan:
-- bilden som visas i bildvisaren, eller hela dagen
-- bilder som är äldre än ett datum, eller alla bilder
-- en enskild timelapse eller alla timelapses
-
-Bilderna tas bort både i `snapshots` och i årsarkivet. Arkivet är hårdlänkar, så utrymmet frigörs först när båda är borta. Allt kräver admin-inloggning. Pågår ett timelapse-jobb för kameran får du vänta tills det är klart.
+Bilder tas bara bort här i admin, aldrig på kamerasidan. De tas bort både i `snapshots` och i årsarkivet. Arkivet är hårdlänkar, så utrymmet frigörs först när båda är borta. Pågår ett timelapse-jobb för kameran får du vänta tills det är klart.
 
 ## Hög- eller lågupplösta bilder
 

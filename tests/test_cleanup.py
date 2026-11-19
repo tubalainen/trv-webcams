@@ -230,3 +230,37 @@ def test_admin_api(data, monkeypatch):
         assert r.status_code == 200
         assert c.get("/api/admin/storage").json()["cameras"] == []
         assert Path(data.db_path).exists()
+
+
+def test_delete_clip_parts(data):
+    cid = data._clips["new_a"]
+    r = cleanup.delete_clip_part(data, "CAM_A", cid, "gif")
+    assert r.files == 1 and r.timelapses == 0
+    with session_scope() as s:
+        c = s.get(Clip, cid)
+        assert c.gif_path is None and c.gif_bytes == 0 and c.mp4_path
+    assert not storage.clip_path(data, "CAM_A", cid, "gif").exists()
+    r = cleanup.delete_clip_part(data, "CAM_A", cid, "mp4")
+    assert r.timelapses == 1  # no files left: the clip is gone
+    with session_scope() as s:
+        assert s.get(Clip, cid) is None
+    with pytest.raises(cleanup.CleanupError):
+        cleanup.delete_clip_part(data, "CAM_B", data._clips["old_a"], "all")  # wrong camera
+    with pytest.raises(cleanup.CleanupError):
+        cleanup.delete_clip_part(data, "CAM_A", data._clips["old_a"], "avi")
+    assert cleanup.delete_clip_part(data, "CAM_A", data._clips["old_a"], "all").files == 2
+
+
+def test_delete_several_days_and_archive_image(data):
+    r = cleanup.delete_images(data, "CAM_A", days=[_day(40), _day(10)])
+    assert r.files == 6
+    assert _days(data, "snapshot_dir", "CAM_A") == [_day(0)]
+    with pytest.raises(cleanup.CleanupError):
+        cleanup.delete_images(data, "CAM_A", days=["2026-02-30"])
+    # Archive-only day (snapshots gone after the retention): delete one hourly image
+    old = data.archive_dir / "CAM_B" / "2025-12-01"
+    old.mkdir(parents=True)
+    (old / "08.jpg").write_bytes(b"x" * 10)
+    (old / "09.jpg").write_bytes(b"x" * 10)
+    r = cleanup.delete_images(data, "CAM_B", day="2025-12-01", name="08.jpg")
+    assert r.files == 1 and r.bytes == 10 and [f.name for f in old.iterdir()] == ["09.jpg"]

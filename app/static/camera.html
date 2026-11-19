@@ -38,10 +38,6 @@
         <figcaption class="viewer-caption">
           <span class="muted" id="latestCaption"></span>
           <button type="button" class="btn small ghost" id="toLatest" hidden>Till senaste</button>
-          <span class="viewer-actions" id="shotActions" hidden>
-            <button type="button" class="btn small ghost" id="delShot">Ta bort bilden</button>
-            <button type="button" class="btn small ghost" id="delDay">Ta bort dagen</button>
-          </span>
         </figcaption>
       </figure>
       <div class="card">
@@ -73,18 +69,6 @@
     <h2>Klipp</h2>
     <div id="clips" class="clip-list"></div>
 
-    <section class="card cam-admin" id="camAdmin" hidden>
-      <h2>Radera för kameran</h2>
-      <div class="cam-delete">
-        <label class="field"><span>Bilder äldre än</span><input type="date" id="delBefore"></label>
-        <button type="button" class="btn small danger" id="delOlder">Ta bort äldre bilder</button>
-        <button type="button" class="btn small danger" id="delAllImages">Ta bort alla bilder</button>
-        <button type="button" class="btn small danger" id="delAllClips">Ta bort alla timelapses</button>
-      </div>
-      <p class="muted" id="camAdminResult" role="status"></p>
-    </section>
-    <p class="muted admin-hint" id="adminHint" hidden>
-      <a href="admin.html">Logga in som admin</a> för att ta bort bilder och timelapses.</p>
   </main>
 
   <script src="vendor/leaflet/leaflet.js"></script>
