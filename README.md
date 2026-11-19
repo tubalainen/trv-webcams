@@ -56,6 +56,8 @@ Statusraden visar hur mycket som används nu och en uppskattning för när reten
 /data/timelapses/{kamera}/{period}.mp4|.gif         senaste versionen per period
 ```
 
+Containern startar som root, sätter ägare på `/data` till `PUID:PGID` (standard `1000:1000`) och kör sedan appen som den användaren. En `./data`-mapp som Docker har skapat som root fungerar därför direkt. Ägaren ändras bara när något i `/data` har fel ägare. Kör du containern med `user:` i compose eller `--user` hoppas det steget över, och då måste mappen redan vara skrivbar för den användaren.
+
 ## Konfiguration
 
 Alla inställningar finns i [`.env.example`](.env.example). De viktigaste:
@@ -72,6 +74,7 @@ Alla inställningar finns i [`.env.example`](.env.example). De viktigaste:
 | `HWACCEL` | `auto` | `auto`, `nvidia`, `vaapi`, `qsv` eller `cpu` |
 | `MAX_CONCURRENT_JOBS` | `2` | Antal timelapse-jobb som körs samtidigt |
 | `DEFAULT_ENABLED_CAMERAS` | – | Kamera-id:n som aktiveras vid första start |
+| `PUID` / `PGID` | `1000` / `1000` | Användare och grupp som appen körs som i containern |
 
 ## API
 
