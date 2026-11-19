@@ -1,14 +1,30 @@
 name: Release image
 
+# Publishes the container image to ghcr.io.
+# - push to main            -> :edge, :sha-<short>
+# - tag vX.Y.Z pushed       -> :X.Y.Z, :X.Y, :latest (+ GitHub release if missing)
+# - "Run workflow" with a version (e.g. 0.2.0) on main
+#                           -> builds and pushes :X.Y.Z, :X.Y, :latest, then creates
+#                              the tag vX.Y.Z and a GitHub release with generated notes
+
 on:
   push:
     branches: [main]
     tags: ["v*.*.*"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without the v prefix (e.g. 0.2.0). Leave empty for an edge build."
+        required: false
+        default: ""
 
 permissions:
-  contents: read
+  contents: write
   packages: write
+
+concurrency:
+  group: release-${{ github.ref }}-${{ inputs.version }}
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
@@ -19,6 +35,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve release version
+        id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_VERSION}" ]; then
+            if ! [[ "${INPUT_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::version must look like 1.2.3 (got '${INPUT_VERSION}')"; exit 1
+            fi
+            if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+              echo "::error::releases can only be made from main"; exit 1
+            fi
+            tag="v${INPUT_VERSION}"
+            if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" >/dev/null 2>&1; then
+              echo "::error::tag ${tag} already exists"; exit 1
+            fi
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "create_tag=true" >> "$GITHUB_OUTPUT"
+          elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME}"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "create_tag=false" >> "$GITHUB_OUTPUT"
+          else
+            tag=""
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "create_tag=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Release tag: ${tag:-<none, edge build>}"
+
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Log in to ghcr.io
@@ -33,9 +82,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=semver,pattern={{version}},value=${{ steps.v.outputs.tag }},enable=${{ steps.v.outputs.release }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.v.outputs.tag }},enable=${{ steps.v.outputs.release }}
+            type=raw,value=latest,enable=${{ steps.v.outputs.release }}
             type=edge,branch=main
             type=sha,format=short
       - name: Build and push
@@ -44,10 +93,41 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          build-args: VERSION=${{ steps.meta.outputs.version }}
+          build-args: VERSION=${{ steps.v.outputs.tag || steps.meta.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: true
           sbom: true
+
+      - name: Create GitHub release
+        if: steps.v.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.v.outputs.tag }}
+          CREATE_TAG: ${{ steps.v.outputs.create_tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists"; exit 0
+          fi
+          notes="Image: \`${REGISTRY}/${IMAGE_NAME}:${TAG#v}\`"
+          if [ "${CREATE_TAG}" = "true" ]; then
+            gh release create "${TAG}" --target "${GITHUB_SHA}" --title "${TAG}" \
+              --generate-notes --notes "${notes}"
+          else
+            gh release create "${TAG}" --verify-tag --title "${TAG}" \
+              --generate-notes --notes "${notes}"
+          fi
+
+      - name: Summary
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          {
+            echo "### Published image tags"
+            echo '```'
+            echo "${TAGS}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

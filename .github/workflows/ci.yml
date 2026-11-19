@@ -50,5 +50,5 @@ jobs:
       - name: Smoke test
         run: |
           docker run -d --name smoke -p 8933:8933 -e SCHEDULER_ENABLED=false trv-webcams:ci
-          for i in $(seq 1 30); do curl -fsS http://localhost:8933/api/health && exit 0; sleep 1; done
+          for _ in $(seq 1 30); do curl -fsS http://localhost:8933/api/health && exit 0; sleep 1; done
           docker logs smoke; exit 1
