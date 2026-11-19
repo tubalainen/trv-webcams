@@ -100,11 +100,15 @@ DATA_DIR=./data python -m app.main
 - **CI** (`.github/workflows/ci.yml`) kör ruff, pytest (inklusive riktig ffmpeg-kodning), pip-audit, bygger Docker-imagen och gör ett röktest.
 - **Release** (`.github/workflows/release.yml`) bygger imagen för amd64 och arm64 och publicerar den på `ghcr.io/tubalainen/trv-webcams`:
   - en push till `main` ger taggarna `edge` och `sha-…`
-  - en tagg `vX.Y.Z` ger taggarna `X.Y.Z`, `X.Y` och `latest`
+  - en release ger taggarna `X.Y.Z`, `X.Y` och `latest`
 
-  ```bash
-  git tag v0.1.0 && git push origin v0.1.0
-  ```
+  En release görs på något av dessa sätt:
+  - **Actions → Release image → Run workflow** på `main`, med versionen (t.ex. `0.2.0`) som input. Workflowet bygger och publicerar imagen och skapar sedan taggen `vX.Y.Z` och en GitHub-release med genererade release notes.
+  - Pusha en tagg; GitHub-releasen skapas då automatiskt om den saknas:
+
+    ```bash
+    git tag v0.2.0 && git push origin v0.2.0
+    ```
 - **Säkerhetsskanning** (`.github/workflows/security.yml`) körs varje dag och på begäran:
   - Trivy skannar den aktuella imagen och den publicerade `:latest`-imagen
   - Trivy skannar även repot efter sårbara beroenden, hemligheter och felkonfiguration
