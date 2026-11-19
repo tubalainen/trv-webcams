@@ -146,11 +146,22 @@ def delete_images(
     before: str | None = None,
     name: str | None = None,
     everything: bool = False,
+    days: list[str] | None = None,
 ) -> Result:
-    """Delete one image (day+name), one day, all days before a date, or everything for a camera."""
-    modes = [name is not None, before is not None, everything, day is not None and name is None]
+    """Delete one image (day+name), one or several days, all days before a date, or everything
+    for a camera. An archive-only image (HH.jpg) is deleted from the archive."""
+    modes = [
+        name is not None,
+        before is not None,
+        everything,
+        day is not None and name is None,
+        bool(days),
+    ]
     if sum(modes) != 1:
-        raise CleanupError("Ange en bild, en dag, ett datum (äldre än) eller alla")
+        raise CleanupError("Ange en bild, en eller flera dagar, ett datum (äldre än) eller alla")
+    selected = set(days or ())
+    for d in selected:
+        parse_day(d, allow_future=True)
     _camera_exists(camera_id)
     _ensure_idle(camera_id)
     cam_dir = storage.safe_id(camera_id)
@@ -161,6 +172,15 @@ def delete_images(
         if day is None or not storage.DAY_RE.match(day) or not storage.IMAGE_NAME_RE.match(name):
             raise CleanupError("Ogiltig bild")
         snap = snap_root / day / name
+        if not snap.is_file() and len(name) == len("HH.jpg") and (arch_root / day / name).is_file():
+            # Hourly archive image whose snapshot day is already gone
+            _remove_file(arch_root / day / name, result)
+            _drop_empty(arch_root / day)
+            for root in (snap_root, arch_root):
+                _drop_empty(root)
+            result.cameras.add(camera_id)
+            _refresh_camera(settings, camera_id)
+            return result
         if not snap.is_file():
             raise CleanupError("Bilden finns inte")
         # The archive keeps the first image of each hour as a hard link to the snapshot
@@ -181,7 +201,12 @@ def delete_images(
             for d in sorted(root.iterdir()):
                 if not d.is_dir() or not storage.DAY_RE.match(d.name):
                     continue
-                if everything or d.name == day or (cutoff and date.fromisoformat(d.name) < cutoff):
+                if (
+                    everything
+                    or d.name == day
+                    or d.name in selected
+                    or (cutoff and date.fromisoformat(d.name) < cutoff)
+                ):
                     _remove_tree(d, result)
     for root in (snap_root, arch_root):
         _drop_empty(root)
@@ -228,6 +253,33 @@ def delete_timelapses(
     for cam_id in result.cameras:
         _drop_empty(settings.timelapse_dir / storage.safe_id(cam_id))
     log.info("Deleted %d clips (%d bytes)", result.timelapses, result.bytes)
+    return result
+
+
+def delete_clip_part(settings: Settings, camera_id: str, clip_id: int, kind: str) -> Result:
+    """Delete the MP4, the GIF or both files of one library clip. The clip row goes when it
+    has no files left. Open to everyone (clips can be generated again at any time)."""
+    if kind not in ("mp4", "gif", "all"):
+        raise CleanupError("Välj mp4, gif eller all")
+    result = Result()
+    with session_scope() as s:
+        clip = s.get(Clip, clip_id)
+        if clip is None or clip.camera_id != camera_id:
+            raise CleanupError("Klippet finns inte")
+        for k in ("mp4", "gif"):
+            if kind not in (k, "all"):
+                continue
+            f = storage.clip_file(settings, camera_id, getattr(clip, f"{k}_path"))
+            if f is not None:
+                _remove_file(f, result)
+            setattr(clip, f"{k}_path", None)
+            setattr(clip, f"{k}_bytes", 0)
+        if clip.mp4_path is None and clip.gif_path is None:
+            s.delete(clip)
+            result.timelapses = 1
+        result.cameras.add(camera_id)
+    _drop_empty(settings.timelapse_dir / storage.safe_id(camera_id))
+    log.info("Deleted %s of clip %s for %s", kind, clip_id, camera_id)
     return result
 
 

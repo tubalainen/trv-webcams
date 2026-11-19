@@ -112,8 +112,11 @@ async function setupBatch() {
 let storageData = null;
 const isoDay = (d) => d.toISOString().slice(0, 10);
 const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return isoDay(d); };
+// storage day rows: [day, snapshot images, snapshot bytes, archive images, archive-only bytes]
+const dayImages = (d) => (d[1] > 0 ? d[1] : d[3]);
+const dayBytes = (d) => d[2] + d[4];
 const sumDays = (days, test) => days.filter((d) => test(d[0]))
-  .reduce((a, d) => [a[0] + d[1], a[1] + d[2] + d[4]], [0, 0]);
+  .reduce((a, d) => [a[0] + dayImages(d), a[1] + dayBytes(d)], [0, 0]);
 
 async function loadStorage() {
   storageData = await api("api/admin/storage");
@@ -122,21 +125,11 @@ async function loadStorage() {
   sel.innerHTML = `<option value="">Alla kameror</option>` + storageData.cameras.map((c) =>
     `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
   sel.value = storageData.cameras.some((c) => c.id === cur) ? cur : "";
-  $("storageRows").innerHTML = storageData.cameras.length ? storageData.cameras.map((c) => {
-    const [imgs, bytes] = sumDays(c.days, () => true);
-    const tlBytes = c.timelapses.reduce((a, t) => a + t.bytes, 0);
-    const clips = c.timelapses.length;
-    const span = c.days.length ? `${c.days[0][0]} – ${c.days[c.days.length - 1][0]}` : "–";
-    return `<tr>
-      <td><a href="camera.html?id=${encodeURIComponent(c.id)}">${esc(c.name)}</a>
-        ${c.enabled ? "" : '<span class="badge">inaktiv</span>'}</td>
-      <td>${imgs}</td><td title="${esc(span)}">${c.days.length}</td>
-      <td>${fmtBytes(bytes + tlBytes)}</td><td>${clips}</td>
-      <td class="row-actions">
-        <button type="button" class="btn small ghost" data-del="images" data-cam="${esc(c.id)}">Ta bort bilder</button>
-        <button type="button" class="btn small ghost" data-del="timelapses" data-cam="${esc(c.id)}">Ta bort timelapses</button>
-      </td></tr>`;
-  }).join("") : `<tr><td colspan="6" class="muted">Inga sparade bilder eller timelapses.</td></tr>`;
+  renderStorageTable();
+  if (cv.id) {
+    if (storageData.cameras.some((c) => c.id === cv.id)) openCamView(cv.id, true);
+    else closeCamView();
+  }
   updatePreview();
 }
 
@@ -184,21 +177,257 @@ $("purge").addEventListener("submit", async (ev) => {
   } catch (e) { $("purgeResult").textContent = `Kunde inte ta bort: ${e.message}`; }
 });
 
-$("storageRows").addEventListener("click", async (ev) => {
-  const b = ev.target.closest("[data-del]");
-  if (!b) return;
-  const cam = storageData.cameras.find((c) => c.id === b.dataset.cam);
-  const what = b.dataset.del === "images" ? "alla bilder" : "alla timelapses";
-  if (!confirm(`Ta bort ${what} för ${cam.name}? Det går inte att ångra.`)) return;
+function camStats(c) {
+  const [imgs, bytes] = sumDays(c.days, () => true);
+  const clipBytes = c.timelapses.reduce((a, t) => a + t.bytes, 0);
+  return { imgs, bytes, clipBytes, clips: c.timelapses.length,
+    first: c.days.length ? c.days[0][0] : "", last: c.days.length ? c.days[c.days.length - 1][0] : "" };
+}
+
+function renderStorageTable() {
+  const cams = storageData.cameras;
+  let totImgs = 0, totBytes = 0, totClips = 0, totClipBytes = 0, totDays = 0;
+  for (const c of cams) {
+    const st = camStats(c);
+    totImgs += st.imgs; totBytes += st.bytes; totClips += st.clips; totClipBytes += st.clipBytes; totDays += c.days.length;
+  }
+  $("storageSummary").textContent = `${cams.length} kameror med data · ${totImgs} bilder på ${totDays} kameradagar ` +
+    `(${fmtBytes(totBytes)}) · ${totClips} klipp (${fmtBytes(totClipBytes)}) · ${fmtBytes(storageData.disk_free_bytes)} ledigt`;
+  const q = $("storageSearch").value.trim().toLowerCase();
+  const sort = $("storageSort").value;
+  const rows = cams.filter((c) => !q || c.name.toLowerCase().includes(q)).map((c) => ({ c, st: camStats(c) }));
+  const by = {
+    size: (a, b) => (b.st.bytes + b.st.clipBytes) - (a.st.bytes + a.st.clipBytes),
+    images: (a, b) => b.st.imgs - a.st.imgs,
+    oldest: (a, b) => (a.st.first || "9").localeCompare(b.st.first || "9"),
+    clips: (a, b) => b.st.clips - a.st.clips,
+    name: (a, b) => a.c.name.localeCompare(b.c.name, "sv"),
+  }[sort];
+  rows.sort(by);
+  $("storageRows").innerHTML = rows.length ? rows.map(({ c, st }) => `
+    <tr class="clickable${cv.id === c.id ? " selected" : ""}" data-cam="${esc(c.id)}" tabindex="0">
+      <td><a href="camera.html?id=${encodeURIComponent(c.id)}" data-link>${esc(c.name)}</a>
+        ${c.enabled ? "" : '<span class="badge">inaktiv</span>'}</td>
+      <td>${st.imgs}</td>
+      <td>${c.days.length}${st.first ? ` <span class="muted">(${st.first} – ${st.last})</span>` : ""}</td>
+      <td>${fmtBytes(st.bytes)}</td>
+      <td>${st.clips}${st.clips ? ` <span class="muted">(${fmtBytes(st.clipBytes)})</span>` : ""}</td>
+    </tr>`).join("") : `<tr><td colspan="5" class="muted">${cams.length ? "Inga kameror matchar sökningen." :
+      "Inga sparade bilder eller klipp."}</td></tr>`;
+}
+
+$("storageSearch").addEventListener("input", renderStorageTable);
+$("storageSort").addEventListener("change", renderStorageTable);
+$("storageRows").addEventListener("click", (ev) => {
+  if (ev.target.closest("[data-link]")) return;
+  const row = ev.target.closest("[data-cam]");
+  if (row) openCamView(row.dataset.cam);
+});
+$("storageRows").addEventListener("keydown", (ev) => {
+  const row = ev.target.closest("[data-cam]");
+  if (row && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); openCamView(row.dataset.cam); }
+});
+
+/* ---- Camera view: calendar of days, selection, thumbnails ---- */
+const MONTHS_SV = ["januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september",
+  "oktober", "november", "december"];
+const WD_SV = ["mån", "tis", "ons", "tor", "fre", "lör", "sön"];
+const cv = { id: null, cam: null, byDay: new Map(), month: null, selected: new Set(), anchor: null,
+  focusDay: null, frames: [], shown: 0, archiveDay: false, image: null };
+const THUMBS_PAGE = 120;
+
+function heatClass(d, max) {
+  if (!d) return "";
+  if (d[1] === 0) return "ha";
+  const r = d[1] / max;
+  return r > 0.66 ? "h3" : r > 0.33 ? "h2" : "h1";
+}
+
+function openCamView(id, keepSelection = false) {
+  const cam = storageData.cameras.find((c) => c.id === id);
+  if (!cam) return;
+  const changed = cv.id !== id;
+  cv.id = id;
+  cv.cam = cam;
+  cv.byDay = new Map(cam.days.map((d) => [d[0], d]));
+  if (changed || !keepSelection) { cv.selected = new Set(); cv.anchor = null; cv.focusDay = null; $("cvThumbs").innerHTML = ""; }
+  cv.selected = new Set([...cv.selected].filter((d) => cv.byDay.has(d)));
+  const last = cam.days.length ? cam.days[cam.days.length - 1][0] : isoDay(new Date());
+  if (changed || !cv.month) cv.month = new Date(`${last.slice(0, 7)}-01T00:00`);
+  const st = camStats(cam);
+  $("camView").hidden = false;
+  $("cvName").innerHTML = `<a href="camera.html?id=${encodeURIComponent(id)}">${esc(cam.name)}</a>`;
+  $("cvMeta").textContent = `${st.imgs} bilder på ${cam.days.length} dagar (${fmtBytes(st.bytes)})` +
+    (st.first ? `, ${st.first} – ${st.last}` : "") + ` · ${st.clips} klipp (${fmtBytes(st.clipBytes)})`;
+  $("cvBefore").max = isoDay(new Date());
+  renderCamCalendar();
+  renderSelection();
+  renderStorageTable();
+  if (changed) $("camView").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function closeCamView() {
+  cv.id = null;
+  $("camView").hidden = true;
+  renderStorageTable();
+}
+
+function renderCamCalendar() {
+  const m = cv.month;
+  const days = cv.cam.days;
+  const max = Math.max(1, ...days.map((d) => d[1]));
+  $("cvMonth").textContent = `${MONTHS_SV[m.getMonth()]} ${m.getFullYear()}`;
+  const first = (m.getDay() + 6) % 7;
+  const count = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+  let html = WD_SV.map((w) => `<span class="cal-wd">${w}</span>`).join("");
+  for (let i = 0; i < first; i++) html += "<span></span>";
+  for (let n = 1; n <= count; n++) {
+    const key = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}-${String(n).padStart(2, "0")}`;
+    const d = cv.byDay.get(key);
+    const cls = ["cal-day", heatClass(d, max)];
+    if (cv.selected.has(key)) cls.push("picked");
+    if (cv.focusDay === key) cls.push("focus");
+    const title = d ? `${key}: ${dayImages(d)} bilder${d[1] === 0 ? " (timbilder)" : ""}, ${fmtBytes(dayBytes(d))}` : key;
+    html += `<button type="button" class="${cls.join(" ")}" data-day="${key}" title="${esc(title)}"${d ? "" : " disabled"}
+      aria-pressed="${cv.selected.has(key)}">${n}</button>`;
+  }
+  $("cvGrid").innerHTML = html;
+  const firstDay = days.length ? days[0][0] : null, lastDay = days.length ? days[days.length - 1][0] : null;
+  const ym = (d) => d.slice(0, 7);
+  const cur = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`;
+  $("cvPrev").disabled = !firstDay || cur <= ym(firstDay);
+  $("cvNext").disabled = !lastDay || cur >= ym(lastDay);
+}
+
+function renderSelection() {
+  const sel = [...cv.selected].sort();
+  let imgs = 0, bytes = 0;
+  for (const k of sel) { const d = cv.byDay.get(k); imgs += dayImages(d); bytes += dayBytes(d); }
+  $("cvSelection").textContent = sel.length
+    ? `${sel.length} ${sel.length === 1 ? "dag" : "dagar"} markerade: ${imgs} bilder, ${fmtBytes(bytes)}` +
+      ` (${sel[0]}${sel.length > 1 ? ` – ${sel[sel.length - 1]}` : ""})`
+    : "Inga dagar markerade.";
+  $("cvDelDays").disabled = !sel.length;
+  $("cvClear").disabled = !sel.length;
+  const fd = cv.focusDay && cv.byDay.get(cv.focusDay);
+  $("cvShow").hidden = !fd;
+  $("cvDayTitle").textContent = fd ? `${cv.focusDay}: ${dayImages(fd)} bilder${fd[1] === 0 ? " (bara timbilder)" : ""}` : "";
+}
+
+$("cvGrid").addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-day]");
+  if (!b || b.disabled) return;
+  const key = b.dataset.day;
+  if (ev.shiftKey && cv.anchor) {
+    const [a, z] = [cv.anchor, key].sort();
+    for (const d of cv.byDay.keys()) if (d >= a && d <= z) cv.selected.add(d);
+  } else if (cv.selected.has(key)) {
+    cv.selected.delete(key);
+  } else {
+    cv.selected.add(key);
+  }
+  cv.anchor = key;
+  if (cv.focusDay !== key) $("cvThumbs").innerHTML = "";
+  cv.focusDay = key;
+  $("cvMore").hidden = true;
+  renderCamCalendar();
+  renderSelection();
+});
+$("cvPrev").addEventListener("click", () => { cv.month = new Date(cv.month.getFullYear(), cv.month.getMonth() - 1, 1); renderCamCalendar(); });
+$("cvNext").addEventListener("click", () => { cv.month = new Date(cv.month.getFullYear(), cv.month.getMonth() + 1, 1); renderCamCalendar(); });
+$("cvClose").addEventListener("click", closeCamView);
+$("cvClear").addEventListener("click", () => { cv.selected.clear(); renderCamCalendar(); renderSelection(); });
+
+const camApi = () => `api/admin/cameras/${encodeURIComponent(cv.id)}`;
+const thumbUrl = (name) => cv.archiveDay
+  ? `${camApi()}/archive/${cv.focusDay}/${name}.jpg`
+  : `api/cameras/${encodeURIComponent(cv.id)}/snapshots/${cv.focusDay}/${name}.jpg`;
+const fmtName = (n) => (n.length === 2 ? `${n}:00` : `${n.slice(0, 2)}:${n.slice(2, 4)}:${n.slice(4, 6)}`);
+
+function renderThumbs() {
+  const next = cv.frames.slice(cv.shown, cv.shown + THUMBS_PAGE);
+  $("cvThumbs").insertAdjacentHTML("beforeend", next.map((n) => `
+    <button type="button" class="thumb" data-img="${n}" title="${fmtName(n)}">
+      <img src="${thumbUrl(n)}" alt="${cv.focusDay} ${fmtName(n)}" loading="lazy"><span>${fmtName(n)}</span>
+    </button>`).join(""));
+  cv.shown += next.length;
+  $("cvMore").hidden = cv.shown >= cv.frames.length;
+  $("cvMore").textContent = `Visa fler (${cv.frames.length - cv.shown} kvar)`;
+}
+
+$("cvShow").addEventListener("click", async () => {
+  const d = cv.byDay.get(cv.focusDay);
+  cv.archiveDay = d[1] === 0;
+  const r = cv.archiveDay
+    ? await api(`${camApi()}/archive?day=${cv.focusDay}`)
+    : await api(`api/cameras/${encodeURIComponent(cv.id)}/snapshots?day=${cv.focusDay}`);
+  cv.frames = r.frames;
+  cv.shown = 0;
+  $("cvThumbs").innerHTML = cv.frames.length ? "" : '<p class="muted">Inga bilder den dagen.</p>';
+  renderThumbs();
+});
+$("cvMore").addEventListener("click", renderThumbs);
+
+$("cvThumbs").addEventListener("click", (ev) => {
+  const t = ev.target.closest("[data-img]");
+  if (!t) return;
+  cv.image = t.dataset.img;
+  $("cvImageEl").src = thumbUrl(cv.image);
+  $("cvImageCap").textContent = `${cv.cam.name} · ${cv.focusDay} ${fmtName(cv.image)}`;
+  $("cvImage").showModal();
+});
+
+async function cvDelete(question, request) {
+  if (!confirm(`${question}\n\nDet går inte att ångra.`)) return null;
+  $("cvResult").textContent = "Tar bort…";
   try {
-    const id = encodeURIComponent(cam.id);
-    const r = b.dataset.del === "images"
-      ? await api(`api/admin/cameras/${id}/delete-images`, { method: "POST", body: { all: true } })
-      : await api(`api/admin/cameras/${id}/timelapses`, { method: "DELETE" });
-    alert(`Klart: ${r.files} filer borttagna, ${fmtBytes(r.bytes)} frigjort.`);
+    const r = await request();
+    $("cvResult").textContent = `Klart: ${r.files} filer${r.timelapses ? ` och ${r.timelapses} klipp` : ""} borttagna, ${fmtBytes(r.bytes)} frigjort.`;
     await loadStorage();
     loadStatus();
-  } catch (e) { alert(`Kunde inte ta bort: ${e.message}`); }
+    return r;
+  } catch (e) {
+    $("cvResult").textContent = `Kunde inte ta bort: ${e.message}`;
+    return null;
+  }
+}
+
+$("cvDelImage").addEventListener("click", async () => {
+  const name = cv.image;
+  const r = await cvDelete(`Ta bort bilden ${cv.focusDay} ${fmtName(name)}?`,
+    () => api(`${camApi()}/snapshots/${cv.focusDay}/${name}.jpg`, { method: "DELETE" }));
+  if (!r) return;
+  $("cvImage").close();
+  cv.frames = cv.frames.filter((n) => n !== name);
+  $("cvThumbs").querySelector(`[data-img="${name}"]`)?.remove();
+  cv.shown = Math.max(0, cv.shown - 1);
+});
+
+$("cvDelDays").addEventListener("click", () => {
+  const days = [...cv.selected].sort();
+  cvDelete(`Ta bort alla bilder från ${days.length} ${days.length === 1 ? "dag" : "dagar"} (${$("cvSelection").textContent})?`,
+    () => api(`${camApi()}/delete-images`, { method: "POST", body: { days } }))
+    .then((r) => { if (r) { cv.selected.clear(); $("cvThumbs").innerHTML = ""; renderSelection(); } });
+});
+
+$("cvDelBefore").addEventListener("click", () => {
+  const before = $("cvBefore").value;
+  if (!before) { $("cvResult").textContent = "Välj ett datum."; return; }
+  const [n, b] = sumDays(cv.cam.days, (d) => d < before);
+  cvDelete(`Ta bort ${n} bilder (${fmtBytes(b)}) från före ${before} för ${cv.cam.name}?`,
+    () => api(`${camApi()}/delete-images`, { method: "POST", body: { before } }));
+});
+
+$("cvDelAll").addEventListener("click", () => {
+  const st = camStats(cv.cam);
+  cvDelete(`Ta bort ALLA ${st.imgs} bilder (${fmtBytes(st.bytes)}) för ${cv.cam.name}?`,
+    () => api(`${camApi()}/delete-images`, { method: "POST", body: { all: true } }));
+});
+
+$("cvDelClips").addEventListener("click", () => {
+  const st = camStats(cv.cam);
+  cvDelete(`Ta bort alla ${st.clips} klipp (${fmtBytes(st.clipBytes)}) för ${cv.cam.name}?`,
+    () => api(`${camApi()}/timelapses`, { method: "DELETE" }));
 });
 
 $("wipeConfirm").addEventListener("input", () => {

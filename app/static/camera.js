@@ -9,7 +9,6 @@ let generator = null;
 // Snapshot browser. `shot` is null while showing the live/latest image.
 const snaps = { days: [], day: null, frames: [], idx: -1 };
 let shot = null;
-let isAdmin = false;
 
 const $ = (id) => document.getElementById(id);
 
@@ -31,7 +30,11 @@ function renderClips() {
           ${esc(fmtRange(c))}</button>
         <span class="muted">${kinds}${c.duration_s ? ` · ${c.duration_s} s` : ""} · ${fmtBytes(size)}${c.temp_station ?
           ` · vägtemp. ${esc(c.temp_station)}` : ""} · skapad ${fmtTime(c.created_at)}</span>
-        ${isAdmin ? `<button type="button" class="btn small danger clip-del" data-del-clip="${c.id}">Ta bort</button>` : ""}
+        <span class="clip-actions">
+          ${c.mp4 && c.gif ? `<button type="button" class="btn small ghost" data-del-clip="${c.id}" data-kind="mp4">Ta bort MP4</button>
+          <button type="button" class="btn small ghost" data-del-clip="${c.id}" data-kind="gif">Ta bort GIF</button>` : ""}
+          <button type="button" class="btn small danger" data-del-clip="${c.id}" data-kind="all">Ta bort klippet</button>
+        </span>
       </header>
       ${open ? `<div class="clip-grid">
         ${c.mp4 ? `<div><video src="${c.mp4.url}" controls loop muted playsinline autoplay preload="metadata"></video>
@@ -111,7 +114,6 @@ function updateNav() {
   $("prevImg").disabled = atOldest();
   $("nextImg").disabled = atNewest();
   $("toLatest").hidden = !shot;
-  $("shotActions").hidden = !(isAdmin && shot);
 }
 
 async function loadDay(day) {
@@ -250,9 +252,15 @@ $("clips").addEventListener("click", async (ev) => {
   const del = ev.target.closest("[data-del-clip]");
   if (del) {
     const c = clips.find((x) => x.id === Number(del.dataset.delClip));
-    const r = await adminDelete(`Ta bort klippet ${fmtRange(c)}?`,
-      () => api(`api/admin/clips/${c.id}`, { method: "DELETE" }));
-    if (r) await Promise.all([load(), loadClips()]);
+    const kind = del.dataset.kind;
+    const what = { mp4: "MP4:an i klippet", gif: "GIF:en i klippet", all: "klippet" }[kind];
+    if (!confirm(`Ta bort ${what} ${fmtRange(c)}?\n\nKlippet kan genereras igen när som helst.`)) return;
+    try {
+      await api(`api/cameras/${encodeURIComponent(camId)}/clips/${c.id}?kind=${kind}`, { method: "DELETE" });
+      if (kind === "all" && openClip === c.id) openClip = -1;
+      await Promise.all([load(), loadClips()]);
+      loadStatus();
+    } catch (e) { alert(`Kunde inte ta bort: ${e.message}`); }
   }
 });
 
@@ -288,77 +296,4 @@ $("resMode").addEventListener("change", (ev) => saveCamSetting({ resolution_mode
     L.circleMarker([cam.lat, cam.lon], { radius: 8, color: "#0b6b2f", fillColor: "#2ea043", fillOpacity: 1 }).addTo(m);
   }
   loadStatus();
-})();
-
-
-/* ---- Deleting (admin only) ---- */
-const camPath = () => `api/admin/cameras/${encodeURIComponent(camId)}`;
-const doneText = (r) => `${r.files} filer borttagna, ${fmtBytes(r.bytes)} frigjort.`;
-
-async function adminDelete(question, request) {
-  if (!confirm(`${question}\n\nDet går inte att ångra.`)) return null;
-  try {
-    const r = await request();
-    $("camAdminResult").textContent = `Klart: ${doneText(r)}`;
-    loadStatus();
-    return r;
-  } catch (e) {
-    alert(`Kunde inte ta bort: ${e.message}`);
-    return null;
-  }
-}
-
-$("delShot").addEventListener("click", async () => {
-  if (!shot) return;
-  const { day, hms } = shot;
-  const r = await adminDelete(`Ta bort bilden ${day} ${fmtHms(hms)}?`,
-    () => api(`${camPath()}/snapshots/${day}/${hms}.jpg`, { method: "DELETE" }));
-  if (!r) return;
-  await load();
-  const idx = snaps.idx;
-  if (await loadDay(day)) {
-    snaps.idx = Math.min(idx, snaps.frames.length - 1);
-    showShot();
-  } else {
-    showLatest();
-  }
-});
-
-$("delDay").addEventListener("click", async () => {
-  if (!shot) return;
-  const day = shot.day;
-  const r = await adminDelete(`Ta bort alla bilder från ${day}?`,
-    () => api(`${camPath()}/delete-images`, { method: "POST", body: { day } }));
-  if (r) { await load(); showLatest(); }
-});
-
-$("delOlder").addEventListener("click", async () => {
-  const before = $("delBefore").value;
-  if (!before) { alert("Välj ett datum."); return; }
-  const r = await adminDelete(`Ta bort alla bilder från före ${before}?`,
-    () => api(`${camPath()}/delete-images`, { method: "POST", body: { before } }));
-  if (r) { await load(); showLatest(); }
-});
-
-$("delAllImages").addEventListener("click", async () => {
-  const r = await adminDelete(`Ta bort ALLA sparade bilder för ${cam.name}?`,
-    () => api(`${camPath()}/delete-images`, { method: "POST", body: { all: true } }));
-  if (r) { await load(); showLatest(); }
-});
-
-$("delAllClips").addEventListener("click", async () => {
-  const r = await adminDelete(`Ta bort ALLA timelapses för ${cam.name}?`,
-    () => api(`${camPath()}/timelapses`, { method: "DELETE" }));
-  if (r) await Promise.all([load(), loadClips()]);
-});
-
-(async () => {
-  try {
-    const s = await api("api/admin/session");
-    isAdmin = s.logged_in;
-    $("camAdmin").hidden = !isAdmin;
-    $("adminHint").hidden = isAdmin || !s.enabled;
-    $("delBefore").max = new Date().toISOString().slice(0, 10);
-    if (cam) { if (clips.length) renderClips(); updateNav(); }
-  } catch (_) { /* admin API unavailable: no delete buttons */ }
 })();

@@ -153,7 +153,11 @@ document.getElementById("bulkOff").addEventListener("click", () => bulk(false));
     o.textContent = name;
     sel.appendChild(o);
   }
-  await loadCameras();
+  state.cameras = await api("api/cameras");
+  // Show the user's own selection first: "Endast aktiva" is on when any camera is active.
+  // Unticking it shows all cameras again.
+  if (state.cameras.some((c) => c.enabled)) document.getElementById("onlyEnabled").checked = true;
+  render();
   if (!state.cameras.length) {
     document.getElementById("count").textContent =
       "Inga kameror ännu – kameralistan hämtas från Trafikverket vid start (kontrollera TRV_API_KEY).";

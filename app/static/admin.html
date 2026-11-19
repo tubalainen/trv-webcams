@@ -86,11 +86,78 @@ docker compose up -d</pre>
 
       <div class="card">
         <h3>Lagring per kamera</h3>
+        <p class="muted" id="storageSummary"></p>
+        <div class="storage-tools">
+          <input type="search" id="storageSearch" placeholder="Sök kamera…" aria-label="Sök kamera">
+          <label class="field inline"><span>Sortera</span>
+            <select id="storageSort">
+              <option value="size">Störst först</option>
+              <option value="images">Flest bilder</option>
+              <option value="oldest">Äldsta bilder först</option>
+              <option value="clips">Flest klipp</option>
+              <option value="name">Namn</option>
+            </select></label>
+        </div>
         <div class="table-wrap"><table class="storage-table">
-          <thead><tr><th>Kamera</th><th>Bilder</th><th>Dagar</th><th>Storlek</th><th>Timelapses</th><th></th></tr></thead>
-          <tbody id="storageRows"><tr><td colspan="6" class="muted">Laddar…</td></tr></tbody>
+          <thead><tr><th>Kamera</th><th>Bilder</th><th>Dagar</th><th>Storlek</th><th>Klipp</th></tr></thead>
+          <tbody id="storageRows"><tr><td colspan="5" class="muted">Laddar…</td></tr></tbody>
         </table></div>
+        <p class="muted small-note">Klicka på en kamera för att se och ta bort dess bilder per dag.</p>
       </div>
+
+      <div class="card cam-view" id="camView" hidden>
+        <div class="cam-view-head">
+          <h3 id="cvName"></h3>
+          <button type="button" class="btn small ghost" id="cvClose" aria-label="Stäng kameravyn">Stäng</button>
+        </div>
+        <p class="muted" id="cvMeta"></p>
+        <div class="cam-view-body">
+          <div class="cv-cal">
+            <div class="cal-head">
+              <button type="button" class="btn small ghost" id="cvPrev" aria-label="Föregående månad">‹</button>
+              <span class="cal-title" id="cvMonth"></span>
+              <button type="button" class="btn small ghost" id="cvNext" aria-label="Nästa månad">›</button>
+            </div>
+            <div class="cal-grid" id="cvGrid"></div>
+            <div class="cal-legend muted">
+              <span><i class="heat h1"></i> få</span><span><i class="heat h2"></i> fler</span>
+              <span><i class="heat h3"></i> många bilder</span><span><i class="heat ha"></i> bara timbilder</span>
+            </div>
+            <p class="muted small-note">Klicka för att markera dagar, skift-klick för ett intervall.</p>
+          </div>
+          <div class="cv-side">
+            <p id="cvSelection" class="cv-selection">Inga dagar markerade.</p>
+            <div class="cv-actions">
+              <button type="button" class="btn small danger" id="cvDelDays" disabled>Ta bort markerade dagar</button>
+              <button type="button" class="btn small ghost" id="cvClear" disabled>Avmarkera</button>
+            </div>
+            <div class="cv-actions">
+              <label class="field inline"><span>Äldre än</span><input type="date" id="cvBefore"></label>
+              <button type="button" class="btn small danger" id="cvDelBefore">Ta bort äldre bilder</button>
+            </div>
+            <div class="cv-actions">
+              <button type="button" class="btn small danger" id="cvDelAll">Ta bort alla bilder</button>
+              <button type="button" class="btn small danger" id="cvDelClips">Ta bort alla klipp</button>
+            </div>
+            <p class="muted" id="cvResult" role="status"></p>
+          </div>
+        </div>
+        <div class="cv-thumbs-head">
+          <h4 id="cvDayTitle"></h4>
+          <button type="button" class="btn small ghost" id="cvShow" hidden>Visa bilder</button>
+        </div>
+        <div class="cv-thumbs" id="cvThumbs"></div>
+        <button type="button" class="btn small ghost" id="cvMore" hidden>Visa fler</button>
+      </div>
+
+      <dialog id="cvImage" class="img-dialog">
+        <img id="cvImageEl" alt="">
+        <p class="muted" id="cvImageCap"></p>
+        <div class="cv-actions">
+          <button type="button" class="btn small danger" id="cvDelImage">Ta bort bilden</button>
+          <form method="dialog"><button class="btn small ghost">Stäng</button></form>
+        </div>
+      </dialog>
 
       <form id="wipe" class="card danger-zone">
         <h3>Rensa allt och börja om</h3>

@@ -7,6 +7,7 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 | Version | Datum | Issue | PR | Ändring |
 |---------|-------|-------|----|---------|
+| 0.1.8 | 2026-11-19 | #22 | #23 | Bildradering bara i admin (sökbar tabell och kameravy med kalender och miniatyrer), klipp (MP4, GIF eller båda) raderbara för alla på kamerasidan, UI-filer med `no-cache`, "Endast aktiva" förvalt när kameror är aktiva, versionsnummer i toppraden |
 | 0.1.7 | 2026-11-19 | #20 | #21 | Generering för län och hela Sverige flyttad från översikten till admin, kalendern begränsad till dagar med sparade bilder |
 | 0.1.6 | 2026-11-19 | #18 | #19 | Generering på begäran (kamera/län/hela Sverige, kalender, MP4/GIF, längd), klippbibliotek, ingen nattlig generering |
 | 0.1.5 | 2026-11-19 | #16 | #17 | Rensa allt, ta bort äldre än X, radering per kamera, dag och bild (admin) |
@@ -72,6 +73,12 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
   högupplöst bild trots `HasFullSizePhoto`. 30 kameror (inaktiva hos Trafikverket) saknar
   `HasFullSizePhoto`.
 
+- **Radering, var (beslut 2026-11-19, 0.1.8):** bilder (snapshots och arkiv) tas bara bort i admin,
+  i tabellen och kameravyn under "Lagring och rensning". På kamerasidan kan **alla** ta bort klipp
+  (MP4, GIF eller båda) med `DELETE /api/cameras/{id}/clips/{clip_id}?kind=`, eftersom de går att
+  generera igen. Kamerasidan har inga knappar för bildradering.
+- **Cache:** UI-filerna skickas med `Cache-Control: no-cache` (`main.UIStaticFiles`, inte `vendor/`).
+  Efter en uppgradering kunde webbläsaren annars köra gammal JS. Det hände med kalendergränsen i 0.1.7.
 - **Radering:** all logik finns i `app/cleanup.py`, och API:t `/api/admin/*` kräver admin.
   "Rensa allt" behåller kameror, val per kamera, väderstationer och inställningar, men tömmer
   `snapshots/`, `archive/`, `timelapses/`, `timelapses`, `jobs` och `road_temperatures`. Den

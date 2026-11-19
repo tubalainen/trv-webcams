@@ -15,6 +15,8 @@ a { color: var(--accent); }
 
 .topbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between;
   padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.app-version { font-size: .78em; color: var(--muted); border: 1px solid var(--border); border-radius: 999px;
+  padding: 0 7px; margin-right: auto; margin-left: -8px; }
 .brand { font-weight: 700; font-size: 1.1em; text-decoration: none; color: var(--text); }
 .status { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: .88em; color: var(--muted); }
 
@@ -138,10 +140,6 @@ a { color: var(--accent); }
 .storage-table td:nth-child(n+2):nth-child(-n+5) { white-space: nowrap; }
 .row-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .cam-delete { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
-.viewer-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-.cam-admin { margin-top: 16px; }
-.cam-admin h2 { margin-top: 0; font-size: 1.1em; }
-.admin-hint { margin-top: 14px; }
 
 /* Generate dialog and calendar */
 .gen-card { margin: 16px 0; }
@@ -179,6 +177,43 @@ a { color: var(--accent); }
 .clip-item { padding: 10px 14px; }
 .clip-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
 .clip-title { font-weight: 600; text-decoration: none; }
-.clip-head .clip-del { margin-left: auto; }
+.clip-head .clip-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; }
 .clip-item .clip-grid { margin-top: 10px; }
 .clip-item video, .clip-item img { width: 100%; border-radius: 6px; display: block; background: #000; margin-bottom: 6px; }
+
+/* Admin storage table and camera view */
+.storage-tools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: end; margin: 0 0 10px; }
+.storage-tools input[type=search] { flex: 1 1 200px; padding: 7px 9px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+.field.inline { display: flex; gap: 6px; align-items: center; }
+.storage-table tr.clickable { cursor: pointer; }
+.storage-table tr.clickable:hover td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.storage-table tr.selected td { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.storage-table tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.cam-view-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.cam-view-head h3 { margin: 0; }
+.cam-view-body { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 16px; margin-top: 10px; }
+.cv-cal { border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.cv-side { display: grid; gap: 10px; align-content: start; }
+.cv-selection { margin: 0; font-weight: 500; }
+.cv-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cal-day.h1, .heat.h1 { background: color-mix(in srgb, var(--on) 22%, transparent); }
+.cal-day.h2, .heat.h2 { background: color-mix(in srgb, var(--on) 45%, transparent); }
+.cal-day.h3, .heat.h3 { background: color-mix(in srgb, var(--on) 75%, transparent); }
+.cal-day.ha, .heat.ha { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.cal-day.picked { outline: 3px solid var(--warn); outline-offset: -3px; }
+.cal-day.focus { box-shadow: inset 0 0 0 1px var(--text); }
+.heat { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; }
+.cv-thumbs-head { display: flex; gap: 12px; align-items: center; margin-top: 14px; }
+.cv-thumbs-head h4 { margin: 0; }
+.cv-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin: 10px 0; }
+.thumb { padding: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); cursor: pointer;
+  overflow: hidden; color: var(--muted); font: inherit; font-size: .78em; }
+.thumb img { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; background: #000; }
+.thumb span { display: block; padding: 2px 4px; }
+.thumb:hover { border-color: var(--accent); }
+.img-dialog { max-width: 960px; width: calc(100% - 32px); border: 1px solid var(--border); border-radius: 10px;
+  background: var(--panel); color: var(--text); padding: 14px; }
+.img-dialog::backdrop { background: rgb(0 0 0 / .55); }
+.img-dialog img { width: 100%; border-radius: 6px; display: block; }
+@media (max-width: 760px) { .cam-view-body { grid-template-columns: 1fr; } }

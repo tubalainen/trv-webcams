@@ -154,3 +154,23 @@ def test_batch_generation_requires_admin(admin_settings, monkeypatch):
         )
         assert c.post("/api/admin/batches", json={**body, "scope": "planet"}).status_code == 400
         assert c.get("/api/batches/999").status_code == 404
+
+
+def test_archive_images_api(admin_settings, monkeypatch):
+    from app.db import Camera
+
+    monkeypatch.setattr(admin, "FAILED_LOGIN_DELAY", 0)
+    with session_scope() as s:
+        s.add(Camera(id="A", name="A"))
+    day = admin_settings.archive_dir / "A" / "2025-12-01"
+    day.mkdir(parents=True)
+    (day / "08.jpg").write_bytes(b"jpg")
+    with TestClient(create_app()) as c:
+        assert c.get("/api/admin/cameras/A/archive", params={"day": "2025-12-01"}).status_code == 401
+        c.post("/api/admin/login", json={"password": "hemligt"})
+        assert c.get("/api/admin/cameras/A/archive", params={"day": "2025-12-01"}).json()["frames"] == ["08"]
+        assert c.get("/api/admin/cameras/A/archive/2025-12-01/08.jpg").content == b"jpg"
+        assert c.get("/api/admin/cameras/A/archive", params={"day": ".."}).status_code == 400
+        assert c.get("/api/admin/cameras/A/archive/2025-12-01/app.db").status_code == 404
+        r = c.post("/api/admin/cameras/A/delete-images", json={"days": ["2025-12-01"]})
+        assert r.status_code == 200 and r.json()["files"] == 1
