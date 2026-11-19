@@ -45,8 +45,121 @@ async function showSettings() {
   $("login").hidden = true;
   $("settings").hidden = false;
   $("logout").hidden = false;
+  $("cleanup").hidden = false;
   render();
+  loadStorage();
 }
+
+/* ---- Storage and cleanup ---- */
+let storageData = null;
+const isoDay = (d) => d.toISOString().slice(0, 10);
+const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return isoDay(d); };
+const sumDays = (days, test) => days.filter((d) => test(d[0]))
+  .reduce((a, d) => [a[0] + d[1], a[1] + d[2] + d[4]], [0, 0]);
+
+async function loadStorage() {
+  storageData = await api("api/admin/storage");
+  const sel = $("purgeCamera");
+  const cur = sel.value;
+  sel.innerHTML = `<option value="">Alla kameror</option>` + storageData.cameras.map((c) =>
+    `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
+  sel.value = storageData.cameras.some((c) => c.id === cur) ? cur : "";
+  $("storageRows").innerHTML = storageData.cameras.length ? storageData.cameras.map((c) => {
+    const [imgs, bytes] = sumDays(c.days, () => true);
+    const tlBytes = c.timelapses.reduce((a, t) => a + t.bytes, 0);
+    const clips = new Set(c.timelapses.map((t) => t.period)).size;
+    const span = c.days.length ? `${c.days[0][0]} – ${c.days[c.days.length - 1][0]}` : "–";
+    return `<tr>
+      <td><a href="camera.html?id=${encodeURIComponent(c.id)}">${esc(c.name)}</a>
+        ${c.enabled ? "" : '<span class="badge">inaktiv</span>'}</td>
+      <td>${imgs}</td><td title="${esc(span)}">${c.days.length}</td>
+      <td>${fmtBytes(bytes + tlBytes)}</td><td>${clips}</td>
+      <td class="row-actions">
+        <button type="button" class="btn small ghost" data-del="images" data-cam="${esc(c.id)}">Ta bort bilder</button>
+        <button type="button" class="btn small ghost" data-del="timelapses" data-cam="${esc(c.id)}">Ta bort timelapses</button>
+      </td></tr>`;
+  }).join("") : `<tr><td colspan="6" class="muted">Inga sparade bilder eller timelapses.</td></tr>`;
+  updatePreview();
+}
+
+function updatePreview() {
+  const before = $("purgeDate").value;
+  if (!storageData || !before) { $("purgePreview").textContent = ""; return; }
+  const what = $("purgeWhat").value, camId = $("purgeCamera").value;
+  const cams = storageData.cameras.filter((c) => !camId || c.id === camId);
+  let imgs = 0, bytes = 0, clips = 0;
+  for (const c of cams) {
+    if (what !== "timelapses") {
+      const [n, b] = sumDays(c.days, (d) => d < before);
+      imgs += n; bytes += b;
+    }
+    if (what !== "images") {
+      const old = c.timelapses.filter((t) => t.created_at.slice(0, 10) < before);
+      clips += new Set(old.map((t) => t.period)).size;
+      bytes += old.reduce((a, t) => a + t.bytes, 0);
+    }
+  }
+  const parts = [];
+  if (what !== "timelapses") parts.push(`${imgs} bilder`);
+  if (what !== "images") parts.push(`${clips} timelapses`);
+  $("purgePreview").textContent = `Tar bort ungefär ${parts.join(" och ")} (${fmtBytes(bytes)}) från före ${before}.`;
+}
+
+for (const id of ["purgeDate", "purgeWhat", "purgeCamera"]) $(id).addEventListener("input", updatePreview);
+document.querySelectorAll("[data-days]").forEach((b) => b.addEventListener("click", () => {
+  $("purgeDate").value = daysAgo(Number(b.dataset.days));
+  updatePreview();
+}));
+$("purgeDate").max = isoDay(new Date());
+
+$("purge").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  updatePreview();
+  if (!confirm(`${$("purgePreview").textContent}\n\nDet går inte att ångra. Fortsätt?`)) return;
+  $("purgeResult").textContent = "Tar bort…";
+  try {
+    const r = await api("api/admin/purge", { method: "POST", body: {
+      before: $("purgeDate").value, what: $("purgeWhat").value, camera_id: $("purgeCamera").value || null } });
+    $("purgeResult").textContent = `Klart: ${r.files} filer och ${r.timelapses} timelapses borttagna, ${fmtBytes(r.bytes)} frigjort.`;
+    await loadStorage();
+    loadStatus();
+  } catch (e) { $("purgeResult").textContent = `Kunde inte ta bort: ${e.message}`; }
+});
+
+$("storageRows").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-del]");
+  if (!b) return;
+  const cam = storageData.cameras.find((c) => c.id === b.dataset.cam);
+  const what = b.dataset.del === "images" ? "alla bilder" : "alla timelapses";
+  if (!confirm(`Ta bort ${what} för ${cam.name}? Det går inte att ångra.`)) return;
+  try {
+    const id = encodeURIComponent(cam.id);
+    const r = b.dataset.del === "images"
+      ? await api(`api/admin/cameras/${id}/delete-images`, { method: "POST", body: { all: true } })
+      : await api(`api/admin/cameras/${id}/timelapses`, { method: "DELETE" });
+    alert(`Klart: ${r.files} filer borttagna, ${fmtBytes(r.bytes)} frigjort.`);
+    await loadStorage();
+    loadStatus();
+  } catch (e) { alert(`Kunde inte ta bort: ${e.message}`); }
+});
+
+$("wipeConfirm").addEventListener("input", () => {
+  $("wipeBtn").disabled = $("wipeConfirm").value.trim() !== "RENSA ALLT";
+});
+
+$("wipe").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (!confirm("Rensa ALLA bilder, timelapses och sparad vägtemperatur? Det går inte att ångra.")) return;
+  $("wipeResult").textContent = "Rensar…";
+  try {
+    const r = await api("api/admin/wipe", { method: "POST", body: { confirm: $("wipeConfirm").value } });
+    $("wipeResult").textContent = `Klart: ${r.files} filer och ${r.timelapses} timelapses borttagna, ${fmtBytes(r.bytes)} frigjort.`;
+    $("wipeConfirm").value = "";
+    $("wipeBtn").disabled = true;
+    await loadStorage();
+    loadStatus();
+  } catch (e) { $("wipeResult").textContent = `Kunde inte rensa: ${e.message}`; }
+});
 
 async function save(body) {
   $("save").disabled = true;

@@ -91,6 +91,27 @@ ADMIN_PASSWORD=ett-långt-lösenord   # i .env, starta sedan om containern
 
 Utan `ADMIN_PASSWORD` är admin-sidan avstängd. Inloggningen gäller i 7 dagar (HttpOnly-cookie), och den upphör om lösenordet byts. Resten av appen är öppen som tidigare. Kör den i ett betrott nät eller bakom en egen proxy. Hemligheter och infrastruktur (`TRV_API_KEY`, `ADMIN_PASSWORD`, `DATA_DIR`, `PORT`, `PUID`/`PGID`, `TIMEZONE`) sätts bara i `.env`.
 
+### Rensa och ta bort data
+
+Under **Lagring och rensning** på admin-sidan finns tre verktyg:
+
+- **Ta bort allt som är äldre än:**
+  - Välj ett datum, eller snabbvalen 7, 30 eller 90 dagar.
+  - Välj bilder, timelapses eller båda, och alla kameror eller en kamera.
+  - En förhandsräkning visar hur mycket som tas bort innan du bekräftar.
+  - Bilder räknas per dag, och timelapses efter när de skapades.
+- **Lagring per kamera:** en tabell med bilder, dagar, storlek och timelapses per kamera, med knappar för att ta bort bilder eller timelapses.
+- **Rensa allt och börja om:** tar bort alla bilder, timelapses, sparad vägtemperatur och jobbhistorik.
+  - Aktiva kameror, valen per kamera och inställningarna ligger kvar, så insamlingen fortsätter vid nästa hämtning.
+  - Knappen fungerar först när du skriver `RENSA ALLT`.
+
+Som inloggad admin kan du också ta bort data direkt på kamerasidan:
+- bilden som visas i bildvisaren, eller hela dagen
+- bilder som är äldre än ett datum, eller alla bilder
+- en enskild timelapse eller alla timelapses
+
+Bilderna tas bort både i `snapshots` och i årsarkivet. Arkivet är hårdlänkar, så utrymmet frigörs först när båda är borta. Allt kräver admin-inloggning. Pågår ett timelapse-jobb för kameran får du vänta tills det är klart.
+
 ## Hög- eller lågupplösta bilder
 
 | | Lågupplöst | Högupplöst |

@@ -17,7 +17,10 @@ from zoneinfo import ZoneInfo
 from app.config import Settings
 
 _SAFE_RE = re.compile(r"[^A-Za-z0-9_.-]")
-_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+HMS_RE = re.compile(r"^\d{6}$")
+# Stored image file names: HHMMSS.jpg (snapshots) or HH.jpg (archive)
+IMAGE_NAME_RE = re.compile(r"^\d{2}(\d{4})?\.jpg$")
 
 
 def safe_id(camera_id: str) -> str:
@@ -109,7 +112,7 @@ def day_dirs(root: Path) -> list[tuple[Path, date]]:
         if not cam.is_dir():
             continue
         for d in cam.iterdir():
-            if d.is_dir() and _DAY_RE.match(d.name):
+            if d.is_dir() and DAY_RE.match(d.name):
                 out.append((d, date.fromisoformat(d.name)))
     return out
 

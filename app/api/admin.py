@@ -1,4 +1,4 @@
-"""Admin page API: password login and global settings."""
+"""Admin page API: password login, global settings and deleting stored data."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import hmac
 import logging
+import os
 import time
 from typing import Any
 
@@ -13,9 +14,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
-from app import cameras, settings_store, weather
+from app import cameras, cleanup, settings_store, storage, weather
+from app.api.routes import invalidate_usage
 from app.config import get_settings
-from app.db import Camera, session_scope
+from app.db import Camera, Timelapse, session_scope
 
 log = logging.getLogger(__name__)
 
@@ -179,3 +181,141 @@ async def apply_changes(app, changed: dict[str, tuple[Any, Any]]) -> list[str]:
     if "trv_fullsize" in changed:
         notes.append("Gäller nya bilder från nästa hämtning.")
     return notes
+
+
+# --- Storage and deletion -------------------------------------------------------------
+
+WIPE_CONFIRMATION = "RENSA ALLT"
+
+
+def _day_stats(root) -> dict[str, list[int]]:
+    """{day: [files, bytes]} below one camera directory."""
+    out: dict[str, list[int]] = {}
+    if not root.is_dir():
+        return out
+    for d in root.iterdir():
+        if not d.is_dir() or not storage.DAY_RE.match(d.name):
+            continue
+        files = size = 0
+        for f in d.iterdir():
+            try:
+                st = f.stat()
+            except OSError:
+                continue
+            files += 1
+            if st.st_nlink <= 1 or root.parent.name == "snapshots":
+                size += st.st_size
+        out[d.name] = [files, size]
+    return out
+
+
+def storage_overview() -> dict:
+    """Per camera: images per day (snapshots + archive-only bytes) and timelapses."""
+    settings = get_settings()
+    ids = cleanup.cameras_with_data(settings)
+    with session_scope() as s:
+        cams = {c.id: c for c in s.scalars(select(Camera).where(Camera.id.in_(ids)))}
+        clips: dict[str, list[dict]] = {}
+        for t in s.scalars(select(Timelapse)):
+            try:
+                size = os.path.getsize(t.path)
+            except OSError:
+                size = 0
+            clips.setdefault(t.camera_id, []).append(
+                {
+                    "period": t.period,
+                    "kind": t.kind,
+                    "bytes": size,
+                    "created_at": t.created_at.isoformat() + "Z",
+                }
+            )
+    rows = []
+    for cid in ids:
+        cam = cams.get(cid)
+        snaps = _day_stats(settings.snapshot_dir / storage.safe_id(cid))
+        arch = _day_stats(settings.archive_dir / storage.safe_id(cid))
+        days = sorted(set(snaps) | set(arch))
+        rows.append(
+            {
+                "id": cid,
+                "name": cam.name if cam else cid,
+                "enabled": bool(cam and cam.enabled),
+                # [day, snapshot images, snapshot bytes, archive images, archive-only bytes]
+                "days": [[d, *snaps.get(d, [0, 0]), *arch.get(d, [0, 0])] for d in days],
+                "timelapses": clips.get(cid, []),
+            }
+        )
+    rows.sort(key=lambda r: r["name"].lower())
+    disk = os.statvfs(settings.data_dir)
+    return {"cameras": rows, "disk_free_bytes": disk.f_bavail * disk.f_frsize}
+
+
+@router.get("/storage", dependencies=[Depends(require_admin)])
+async def get_storage() -> dict:
+    return await asyncio.to_thread(storage_overview)
+
+
+def _run(fn, *args, **kwargs) -> dict:
+    try:
+        result = fn(get_settings(), *args, **kwargs)
+    except cleanup.CleanupError as e:
+        raise HTTPException(400, str(e)) from None
+    except cleanup.JobRunning as e:
+        raise HTTPException(409, str(e)) from None
+    invalidate_usage()
+    return result.as_dict()
+
+
+class Purge(BaseModel):
+    before: str
+    what: str = "all"  # images | timelapses | all
+    camera_id: str | None = None
+
+
+@router.post("/purge", dependencies=[Depends(require_admin)])
+async def purge(body: Purge) -> dict:
+    """Delete images and/or timelapses older than a date."""
+    return await asyncio.to_thread(
+        _run, cleanup.purge_older_than, body.before, body.what, camera_id=body.camera_id
+    )
+
+
+class DeleteImages(BaseModel):
+    day: str | None = None
+    before: str | None = None
+    all: bool = False
+
+
+@router.post("/cameras/{camera_id}/delete-images", dependencies=[Depends(require_admin)])
+async def delete_camera_images(camera_id: str, body: DeleteImages) -> dict:
+    return await asyncio.to_thread(
+        _run, cleanup.delete_images, camera_id, day=body.day, before=body.before, everything=body.all
+    )
+
+
+@router.delete("/cameras/{camera_id}/snapshots/{day}/{name}", dependencies=[Depends(require_admin)])
+async def delete_snapshot(camera_id: str, day: str, name: str) -> dict:
+    return await asyncio.to_thread(_run, cleanup.delete_images, camera_id, day=day, name=name)
+
+
+@router.delete("/cameras/{camera_id}/timelapses", dependencies=[Depends(require_admin)])
+async def delete_camera_timelapses(camera_id: str, period: str | None = None) -> dict:
+    return await asyncio.to_thread(_run, cleanup.delete_timelapses, camera_id, period=period)
+
+
+class Wipe(BaseModel):
+    confirm: str
+
+
+@router.post("/wipe", dependencies=[Depends(require_admin)])
+async def wipe(body: Wipe, request: Request) -> dict:
+    """Delete all images, timelapses, road temperatures and job history ("start over")."""
+    if body.confirm.strip() != WIPE_CONFIRMATION:
+        raise HTTPException(400, f'Skriv "{WIPE_CONFIRMATION}" för att bekräfta')
+    try:
+        result = await cleanup.wipe_all(get_settings(), request.app.state.jobs)
+    except cleanup.JobRunning as e:
+        raise HTTPException(409, str(e)) from None
+    invalidate_usage()
+    log.warning("All data wiped from the admin page by %s", request.client.host if request.client else "?")
+    return result.as_dict()

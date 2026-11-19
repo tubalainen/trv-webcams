@@ -8,6 +8,7 @@ let pollTimer = null;
 // Snapshot browser. `shot` is null while showing the live/latest image.
 const snaps = { days: [], day: null, frames: [], idx: -1 };
 let shot = null;
+let isAdmin = false;
 
 const $ = (id) => document.getElementById(id);
 
@@ -33,7 +34,8 @@ function renderClip() {
         <img src="${gif.url}" alt="GIF-animation ${esc(label)}" loading="lazy">
         <p class="muted">${meta(gif)}</p>
         <a class="btn small ghost" href="${gif.url}" download>Ladda ner GIF</a></div>` : ""}
-    </div>`;
+    </div>
+    ${isAdmin ? `<p><button type="button" class="btn small danger" id="delClip">Ta bort den här timelapsen</button></p>` : ""}`;
 }
 
 function renderTabs() {
@@ -102,6 +104,7 @@ function updateNav() {
   $("prevImg").disabled = atOldest();
   $("nextImg").disabled = atNewest();
   $("toLatest").hidden = !shot;
+  $("shotActions").hidden = !(isAdmin && shot);
 }
 
 async function loadDay(day) {
@@ -274,4 +277,85 @@ $("generate").addEventListener("click", async () => {
     L.circleMarker([cam.lat, cam.lon], { radius: 8, color: "#0b6b2f", fillColor: "#2ea043", fillOpacity: 1 }).addTo(m);
   }
   loadStatus();
+})();
+
+
+/* ---- Deleting (admin only) ---- */
+const camPath = () => `api/admin/cameras/${encodeURIComponent(camId)}`;
+const doneText = (r) => `${r.files} filer borttagna, ${fmtBytes(r.bytes)} frigjort.`;
+
+async function adminDelete(question, request) {
+  if (!confirm(`${question}\n\nDet går inte att ångra.`)) return null;
+  try {
+    const r = await request();
+    $("camAdminResult").textContent = `Klart: ${doneText(r)}`;
+    loadStatus();
+    return r;
+  } catch (e) {
+    alert(`Kunde inte ta bort: ${e.message}`);
+    return null;
+  }
+}
+
+$("delShot").addEventListener("click", async () => {
+  if (!shot) return;
+  const { day, hms } = shot;
+  const r = await adminDelete(`Ta bort bilden ${day} ${fmtHms(hms)}?`,
+    () => api(`${camPath()}/snapshots/${day}/${hms}.jpg`, { method: "DELETE" }));
+  if (!r) return;
+  await load();
+  const idx = snaps.idx;
+  if (await loadDay(day)) {
+    snaps.idx = Math.min(idx, snaps.frames.length - 1);
+    showShot();
+  } else {
+    showLatest();
+  }
+});
+
+$("delDay").addEventListener("click", async () => {
+  if (!shot) return;
+  const day = shot.day;
+  const r = await adminDelete(`Ta bort alla bilder från ${day}?`,
+    () => api(`${camPath()}/delete-images`, { method: "POST", body: { day } }));
+  if (r) { await load(); showLatest(); }
+});
+
+$("clip").addEventListener("click", async (ev) => {
+  if (!ev.target.closest("#delClip")) return;
+  const label = periods.find((p) => p.key === activePeriod)?.label ?? activePeriod;
+  const r = await adminDelete(`Ta bort timelapsen för ${label} (MP4 och GIF)?`,
+    () => api(`${camPath()}/timelapses?period=${activePeriod}`, { method: "DELETE" }));
+  if (r) await load();
+});
+
+$("delOlder").addEventListener("click", async () => {
+  const before = $("delBefore").value;
+  if (!before) { alert("Välj ett datum."); return; }
+  const r = await adminDelete(`Ta bort alla bilder från före ${before}?`,
+    () => api(`${camPath()}/delete-images`, { method: "POST", body: { before } }));
+  if (r) { await load(); showLatest(); }
+});
+
+$("delAllImages").addEventListener("click", async () => {
+  const r = await adminDelete(`Ta bort ALLA sparade bilder för ${cam.name}?`,
+    () => api(`${camPath()}/delete-images`, { method: "POST", body: { all: true } }));
+  if (r) { await load(); showLatest(); }
+});
+
+$("delAllClips").addEventListener("click", async () => {
+  const r = await adminDelete(`Ta bort ALLA timelapses för ${cam.name}?`,
+    () => api(`${camPath()}/timelapses`, { method: "DELETE" }));
+  if (r) await load();
+});
+
+(async () => {
+  try {
+    const s = await api("api/admin/session");
+    isAdmin = s.logged_in;
+    $("camAdmin").hidden = !isAdmin;
+    $("adminHint").hidden = isAdmin || !s.enabled;
+    $("delBefore").max = new Date().toISOString().slice(0, 10);
+    if (cam) { renderClip(); updateNav(); }
+  } catch (_) { /* admin API unavailable: no delete buttons */ }
 })();
