@@ -7,6 +7,7 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 | Version | Datum | Issue | PR | Ändring |
 |---------|-------|-------|----|---------|
+| 0.1.5 | 2026-11-19 | #16 | #17 | Rensa allt, ta bort äldre än X, radering per kamera, dag och bild (admin) |
 | 0.1.4 | 2026-11-19 | #13 | #15 | Admin-sida med lösenord, globala inställningar i databasen, ändringar utan omstart |
 | 0.1.4 | 2026-11-19 | #14 | #15 | Hög-/lågupplösta bilder: standard i admin, val per kamera, HD-märkning med faktisk upplösning |
 | 0.1.3 | 2026-11-19 | #11 | #12 | Graf med vägtemperatur i timelapse och GIF, av/på per kamera |
@@ -60,6 +61,14 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
   1 559 kameror: 782 har 1280×720, 759 har 1920×1080, några har 576p–960p och 1 har ingen
   högupplöst bild trots `HasFullSizePhoto`. 30 kameror (inaktiva hos Trafikverket) saknar
   `HasFullSizePhoto`.
+
+- **Radering:** all logik finns i `app/cleanup.py`, och API:t `/api/admin/*` kräver admin.
+  "Rensa allt" behåller kameror, val per kamera, väderstationer och inställningar, men tömmer
+  `snapshots/`, `archive/`, `timelapses/`, `timelapses`, `jobs` och `road_temperatures`. Den
+  håller insamlingens lås medan den kör. Dagar tas bort i både `snapshots` och `archive`.
+  Antal och frigjorda byte räknas per inode, så en arkivlänk räknas inte som en extra bild.
+  Pågående jobb för kameran ger 409. "Äldre än" för timelapses gäller när klippet skapades
+  (`created_at`).
 
 ## Bra att veta
 

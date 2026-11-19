@@ -43,6 +43,56 @@ docker compose up -d</pre>
         <span id="saveResult" role="status"></span>
       </div>
     </form>
+
+    <section id="cleanup" hidden>
+      <h2>Lagring och rensning</h2>
+
+      <form id="purge" class="card">
+        <h3>Ta bort allt som är äldre än</h3>
+        <div class="purge-row">
+          <label class="field"><span>Datum</span><input type="date" id="purgeDate" required></label>
+          <span class="quick">
+            <button type="button" class="btn small ghost" data-days="7">7 dagar</button>
+            <button type="button" class="btn small ghost" data-days="30">30 dagar</button>
+            <button type="button" class="btn small ghost" data-days="90">90 dagar</button>
+          </span>
+        </div>
+        <div class="purge-row">
+          <label class="field"><span>Vad</span>
+            <select id="purgeWhat">
+              <option value="all">Bilder och timelapses</option>
+              <option value="images">Bara bilder</option>
+              <option value="timelapses">Bara timelapses</option>
+            </select></label>
+          <label class="field"><span>Kameror</span><select id="purgeCamera"></select></label>
+        </div>
+        <p class="muted" id="purgePreview"></p>
+        <button class="btn danger" type="submit">Ta bort</button>
+        <span id="purgeResult" role="status"></span>
+        <p class="muted small-note">Bilder räknas per dag, och timelapses efter när de skapades.
+          Nattkörningen skapar nya timelapses för aktiva kameror varje natt.</p>
+      </form>
+
+      <div class="card">
+        <h3>Lagring per kamera</h3>
+        <div class="table-wrap"><table class="storage-table">
+          <thead><tr><th>Kamera</th><th>Bilder</th><th>Dagar</th><th>Storlek</th><th>Timelapses</th><th></th></tr></thead>
+          <tbody id="storageRows"><tr><td colspan="6" class="muted">Laddar…</td></tr></tbody>
+        </table></div>
+      </div>
+
+      <form id="wipe" class="card danger-zone">
+        <h3>Rensa allt och börja om</h3>
+        <p>Tar bort <b>alla bilder, timelapses, sparad vägtemperatur och jobbhistorik</b> för alla kameror.
+          Det går inte att ångra.</p>
+        <p class="muted">Behålls: vilka kameror som är aktiva, valen per kamera och inställningarna här.
+          Insamlingen fortsätter vid nästa hämtning.</p>
+        <label class="field"><span>Skriv <code>RENSA ALLT</code> för att bekräfta</span>
+          <input id="wipeConfirm" autocomplete="off" spellcheck="false"></label>
+        <button class="btn danger" type="submit" id="wipeBtn" disabled>Rensa allt</button>
+        <span id="wipeResult" role="status"></span>
+      </form>
+    </section>
   </main>
 
   <script src="common.js"></script>

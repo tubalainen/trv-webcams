@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import re
 import shutil
 import time
 from datetime import datetime
@@ -261,8 +260,8 @@ def latest_image(camera_id: str):
     raise HTTPException(404, "Ingen bild")
 
 
-_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-_HMS_RE = re.compile(r"^\d{6}$")
+_DAY_RE = storage.DAY_RE
+_HMS_RE = storage.HMS_RE
 
 
 def _snapshot_days(base: Path) -> list[str]:
@@ -348,6 +347,11 @@ async def trigger_sync() -> dict:
 
 
 _usage_cache: dict = {"t": 0.0, "data": None}
+
+
+def invalidate_usage() -> None:
+    """Recompute disk usage on the next status request (after deleting data)."""
+    _usage_cache["data"] = None
 
 
 def _usage() -> dict:
