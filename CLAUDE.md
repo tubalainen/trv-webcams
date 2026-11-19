@@ -67,7 +67,7 @@ en lokalt startad app:
 
 - Gränssnittet, README och PR-texter är på svenska. Kod, kommentarer, loggar och
   commit-meddelanden är på engelska.
-- Python 3.12, ruff med radlängd 110. Inga nya beroenden utan anledning, och gränssnittet
+- Python 3.15, ruff med radlängd 110. Inga nya beroenden utan anledning, och gränssnittet
   har inget byggsteg.
 - Appen kör som uid/gid `PUID`/`PGID` (1000). Startskriptet rättar ägaren på `/data`.
 - Sökvägar som byggs av indata från användaren valideras med regex och `storage.safe_id`.
