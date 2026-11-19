@@ -36,7 +36,16 @@ docker run -d --name trv-webcams --gpus all -p 8933:8933 \
 | `qsv` | `h264_qsv` | Intel Quick Sync |
 | `cpu` | `libx264` | – |
 
-Med `HWACCEL=auto` (standard) provar appen vid start kodarna i ordningen NVIDIA → VAAPI → QSV → CPU och väljer den första som fungerar. Om en GPU-kodning misslyckas under körning gör appen om den på CPU. Statusraden i gränssnittet och `/api/status` visar vilken kodare som används. GIF-filer skapas alltid på CPU med `palettegen`/`paletteuse`, eftersom det inte finns någon GPU-kodare för GIF.
+Med `HWACCEL=auto` (standard) provar appen vid start kodarna i ordningen NVIDIA → VAAPI → QSV → CPU och väljer den första som fungerar. Resultatet skrivs i containerns logg (`docker compose logs trv-webcams`): vilket NVIDIA-kort som syns (via `nvidia-smi`), om varje kodare fungerade eller varför den inte gjorde det, och vilken kodare som används:
+
+```
+INFO app.ffmpeg: Hardware acceleration check (HWACCEL=auto)
+INFO app.ffmpeg:   NVIDIA GPU found: NVIDIA GeForce RTX 3060 (driver 550.120, 12288 MiB)
+INFO app.ffmpeg:   nvidia h264_nvenc  OK
+INFO app.ffmpeg: Using video encoder h264_nvenc (GPU)
+```
+
+Om ingen GPU syns i containern loggas en varning med tips om NVIDIA Container Toolkit och `deploy`-blocket i compose-filen. Om en GPU-kodning misslyckas under körning gör appen om den på CPU. Statusraden i gränssnittet och `/api/status` visar vilken kodare som används. GIF-filer skapas alltid på CPU med `palettegen`/`paletteuse`, eftersom det inte finns någon GPU-kodare för GIF.
 
 Imagen bygger på Debians ffmpeg-paket, som har stöd för NVENC/NVDEC, VAAPI och QSV. NVIDIA-biblioteken laddas från värdens drivrutin när containern körs.
 
@@ -56,6 +65,8 @@ Statusraden visar hur mycket som används nu och en uppskattning för när reten
 /data/timelapses/{kamera}/{period}.mp4|.gif         senaste versionen per period
 ```
 
+Containern startar som root, sätter ägare på `/data` till `PUID:PGID` (standard `1000:1000`) och kör sedan appen som den användaren. En `./data`-mapp som Docker har skapat som root fungerar därför direkt. Ägaren ändras bara när något i `/data` har fel ägare. Kör du containern med `user:` i compose eller `--user` hoppas det steget över, och då måste mappen redan vara skrivbar för den användaren.
+
 ## Konfiguration
 
 Alla inställningar finns i [`.env.example`](.env.example). De viktigaste:
@@ -72,6 +83,7 @@ Alla inställningar finns i [`.env.example`](.env.example). De viktigaste:
 | `HWACCEL` | `auto` | `auto`, `nvidia`, `vaapi`, `qsv` eller `cpu` |
 | `MAX_CONCURRENT_JOBS` | `2` | Antal timelapse-jobb som körs samtidigt |
 | `DEFAULT_ENABLED_CAMERAS` | – | Kamera-id:n som aktiveras vid första start |
+| `PUID` / `PGID` | `1000` / `1000` | Användare och grupp som appen körs som i containern |
 
 ## API
 

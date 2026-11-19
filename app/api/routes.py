@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import shutil
 import time
 from datetime import datetime
@@ -196,6 +197,50 @@ def latest_image(camera_id: str):
     raise HTTPException(404, "Ingen bild")
 
 
+_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_HMS_RE = re.compile(r"^\d{6}$")
+
+
+def _snapshot_days(base: Path) -> list[str]:
+    if not base.is_dir():
+        return []
+    return sorted(d.name for d in base.iterdir() if d.is_dir() and _DAY_RE.match(d.name))
+
+
+@router.get("/api/cameras/{camera_id}/snapshots")
+def list_snapshots(camera_id: str, day: str | None = None) -> dict:
+    """Saved images for one day (latest day by default), plus all days that have images.
+
+    Times are local wall-clock time (settings.timezone) as HHMMSS, oldest first.
+    """
+    with session_scope() as s:
+        _get_camera(s, camera_id)
+    if day is not None and not _DAY_RE.match(day):
+        raise HTTPException(400, "Ogiltigt datum, använd ÅÅÅÅ-MM-DD")
+    base = get_settings().snapshot_dir / storage.safe_id(camera_id)
+    days = _snapshot_days(base)
+    if day is None:
+        day = days[-1] if days else None
+    frames: list[str] = []
+    if day and (base / day).is_dir():
+        frames = sorted(
+            f.stem for f in (base / day).iterdir() if f.suffix == ".jpg" and _HMS_RE.match(f.stem)
+        )
+    return {"days": days, "day": day, "frames": frames}
+
+
+@router.get("/api/cameras/{camera_id}/snapshots/{day}/{name}")
+def snapshot_image(camera_id: str, day: str, name: str):
+    hms, _, ext = name.partition(".")
+    if not _DAY_RE.match(day) or not _HMS_RE.match(hms) or ext != "jpg":
+        raise HTTPException(404)
+    path = get_settings().snapshot_dir / storage.safe_id(camera_id) / day / f"{hms}.jpg"
+    if not path.is_file():
+        raise HTTPException(404, "Ingen bild")
+    # Saved snapshots never change, so the browser may cache them
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+
+
 class GenerateRequest(BaseModel):
     periods: list[str] = []
 
@@ -274,13 +319,15 @@ async def status(request: Request) -> dict:
         for job in sched.get_jobs():
             nrt = getattr(job, "next_run_time", None)
             next_runs[job.id] = nrt.isoformat() if nrt else None
-    enc = request.app.state.jobs.encoder._choice
+    encoder = request.app.state.jobs.encoder
+    enc = encoder._choice
     return {
         "version": __version__,
         "cameras_total": total,
         "cameras_enabled": enabled,
         "jobs_pending": queued,
         "encoder": {"mode": enc.mode, "codec": enc.codec} if enc else None,
+        "gpus": encoder.gpus or [],
         "usage": usage,
         "disk_free_bytes": disk.free,
         "disk_total_bytes": disk.total,

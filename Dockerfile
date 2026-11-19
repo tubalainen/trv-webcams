@@ -24,12 +24,14 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  # pip is not needed at runtime; removing it shrinks the attack surface
  && rm -rf /usr/local/lib/python3*/site-packages/pip* /usr/local/bin/pip* \
- && useradd --system --uid 1000 --create-home --home-dir /home/app app \
+ && groupadd --system --gid 1000 app \
+ && useradd --system --uid 1000 --gid app --create-home --home-dir /home/app app \
  && mkdir -p /data && chown app:app /data
 
 COPY --from=builder /opt/venv /opt/venv
 WORKDIR /app
 COPY app ./app
+COPY --chmod=0755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
@@ -40,11 +42,13 @@ ENV PATH="/opt/venv/bin:$PATH" \
     NVIDIA_VISIBLE_DEVICES=all \
     NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
 
-USER app
+# The entrypoint starts as root, fixes ownership of /data and then drops to
+# uid/gid PUID/PGID (default 1000, the "app" user) before starting the app.
 VOLUME ["/data"]
 EXPOSE 8933
 
 HEALTHCHECK --interval=60s --timeout=5s --start-period=30s --retries=3 \
   CMD python -c "import os,urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ.get(\"PORT\",\"8933\")}/api/health', timeout=4)"
 
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["python", "-m", "app.main"]

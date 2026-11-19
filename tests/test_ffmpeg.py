@@ -15,6 +15,25 @@ def test_detect_falls_back():
     assert ffmpeg.detect_encoder("cpu", probe=lambda m, d: True).mode == "cpu"
 
 
+def test_detect_logs_report(caplog):
+    caplog.set_level("INFO", logger="app.ffmpeg")
+    probe = lambda m, d: (False, "Cannot load libnvidia-encode.so.1") if m == "nvidia" else (m == "vaapi")  # noqa: E731
+    choice = ffmpeg.detect_encoder("auto", probe=probe, gpus=["NVIDIA RTX 3060 (driver 550, 12288 MiB)"])
+    assert choice.mode == "vaapi"
+    text = caplog.text
+    assert "NVIDIA GPU found: NVIDIA RTX 3060" in text
+    assert "h264_nvenc  FAILED: Cannot load libnvidia-encode.so.1" in text
+    assert "NVENC does not work" in text
+    assert "Using video encoder h264_vaapi (GPU)" in text
+
+
+def test_detect_warns_on_cpu_without_gpu(caplog):
+    caplog.set_level("INFO", logger="app.ffmpeg")
+    assert ffmpeg.detect_encoder("auto", probe=lambda m, d: False).mode == "cpu"
+    assert "No NVIDIA GPU visible" in caplog.text
+    assert "NVIDIA Container Toolkit" in caplog.text
+
+
 def test_mp4_command_nvenc():
     cmd = ffmpeg.mp4_command(
         Path("l.txt"), Path("o.mp4"), EncoderChoice("nvidia", "h264_nvenc"), 30, 641, 481
