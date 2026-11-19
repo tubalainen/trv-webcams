@@ -7,6 +7,8 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 | Version | Datum | Issue | PR | Ändring |
 |---------|-------|-------|----|---------|
+| 0.1.4 | 2026-11-19 | #13 | #15 | Admin-sida med lösenord, globala inställningar i databasen, ändringar utan omstart |
+| 0.1.4 | 2026-11-19 | #14 | #15 | Hög-/lågupplösta bilder: standard i admin, val per kamera, HD-märkning med faktisk upplösning |
 | 0.1.3 | 2026-11-19 | #11 | #12 | Graf med vägtemperatur i timelapse och GIF, av/på per kamera |
 | 0.1.3 | 2026-11-19 | – | #10 | Python 3.15 (ersätter Dependabot #1), pip tas bort oberoende av version |
 | 0.1.2 | 2026-11-19 | #8 | #6 | Bläddra fram/tillbaka bland sparade bilder på kamerasidan |
@@ -40,6 +42,24 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
   grafens text går att läsa (normalbilderna är 384×216).
 - **Databas:** `db._add_missing_columns` lägger till nya kolumner i befintliga databaser. Nya
   kolumner måste vara nullable eller ha `server_default`.
+
+- **Admin:** `ADMIN_PASSWORD` i `.env`, utan den är admin avstängt. Sessionen är en HMAC-signerad
+  cookie (7 dagar). Nyckeln är en slumpad hemlighet i `app_settings` plus lösenordet, så
+  ett lösenordsbyte loggar ut alla. Bara `/api/admin/*` är skyddat, resten av appen är öppen
+  (beslut 2026-11-19).
+- **Inställningar:** `app/settings_store.py` listar vad som kan ändras i admin (`FIELDS`).
+  Värden sparas som JSON i `app_settings` och sätts på den delade `Settings`-instansen, så
+  all kod läser fortfarande `settings.x`. `.env` är startvärdet. Ändringar görs direkt:
+  `scheduler.reschedule`, `Encoder.reset`, `JobQueue.resize` och `weather.assign_stations`.
+- **Val per kamera:** `temp_overlay_mode` och `resolution_mode` är "default", "on/high" eller
+  "off/low". Logiken finns i `app/cameras.py`. Kolumnen `temp_overlay` från 0.1.3 ligger kvar i
+  gamla databaser, och "av" konverterades till `temp_overlay_mode='off'`.
+- **Högupplöst:** `?type=fullsize`. Upplösningen läses ur JPEG-huvudet: servern ignorerar
+  Range, så de första 16 kB strömmas och strömmen avbryts. Det görs en gång i veckan per kamera
+  (cirka 2,5 min för alla), vid start och efter den dagliga synken. Uppmätt 2026-11-19 bland
+  1 559 kameror: 782 har 1280×720, 759 har 1920×1080, några har 576p–960p och 1 har ingen
+  högupplöst bild trots `HasFullSizePhoto`. 30 kameror (inaktiva hos Trafikverket) saknar
+  `HasFullSizePhoto`.
 
 ## Bra att veta
 

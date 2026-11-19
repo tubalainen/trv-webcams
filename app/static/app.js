@@ -20,7 +20,7 @@ function markerStyle(c) {
 function popupHtml(c) {
   return `<div class="popup">
     <strong>${esc(c.name)}</strong><br>
-    <span class="muted">${esc(c.county)} · ${esc(c.type)}</span>
+    <span class="muted">${esc(c.county)} · ${esc(c.type)}${c.hd ? ` · <span class="badge" title="Har högupplösta bilder">HD ${esc(c.hd)}</span>` : ""}</span>
     <img src="api/cameras/${encodeURIComponent(c.id)}/latest.jpg" alt="" loading="lazy">
     <div class="popup-actions">
       <a class="btn small" href="${camUrl(c.id)}">Öppna</a>
@@ -53,7 +53,7 @@ function render() {
       </label>
       <a href="${camUrl(c.id)}" class="cam-link" data-focus="${esc(c.id)}">
         <span class="name">${esc(c.name)}</span>
-        <span class="muted">${esc(c.county)}</span>
+        <span class="muted">${esc(c.county)}${c.hd ? ` <span class="badge${c.saves_hd ? " on" : ""}" title="${c.saves_hd ? "Sparar högupplösta bilder" : "Har högupplösta bilder"}">HD ${esc(c.hd)}</span>` : ""}</span>
       </a>`;
     frag.appendChild(li);
   }

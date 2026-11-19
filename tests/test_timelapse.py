@@ -122,7 +122,7 @@ async def test_generate_with_temperature_overlay(settings):
 
     with_graph = corner(mp4)
     with session_scope() as s:
-        s.get(Camera, "CAM_T").temp_overlay = False
+        s.get(Camera, "CAM_T").temp_overlay_mode = "off"
     msg = await generate(settings, Encoder(settings), "CAM_T", "1d", now=now)
     assert "vägtemp" not in msg
     assert abs(corner(mp4) - with_graph) > 3

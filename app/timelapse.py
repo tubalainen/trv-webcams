@@ -12,7 +12,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from app import ffmpeg, overlay, storage, weather
+from app import cameras, ffmpeg, overlay, storage, weather
 from app.config import Settings
 from app.db import Camera, Job, Timelapse, session_scope, utcnow
 
@@ -83,6 +83,10 @@ class Encoder:
     def downgrade(self) -> None:
         self._choice = ffmpeg.EncoderChoice("cpu", "libx264")
 
+    def reset(self) -> None:
+        """Forget the detected encoder so the next use checks the hardware again."""
+        self._choice = None
+
 
 # Trafikverket's normal images are only 384 px wide. Smaller sources are scaled up by
 # a whole factor so the temperature graph text stays readable in the video.
@@ -107,7 +111,7 @@ def temp_graph_for(
         cam = s.get(Camera, camera_id)
         if cam is None:
             return None, ""
-        use = cam.temp_overlay if enabled is None else enabled
+        use = cameras.wants_temp_overlay(cam, settings) if enabled is None else enabled
         station_id = cam.station_id
     if not use:
         return None, ""
@@ -151,7 +155,7 @@ async def generate(
 ) -> str:
     """Generate MP4 + GIF for one camera/period. Returns a short status message.
 
-    temp_overlay=None uses the camera's own setting.
+    temp_overlay=None uses the camera's setting (or the admin default).
     """
     period = PERIODS[period_key]
     frames, start, end = await asyncio.to_thread(select_frames, settings, camera_id, period, now)
@@ -278,14 +282,22 @@ class JobQueue:
         self.encoder = Encoder(settings)
         self.queue: asyncio.Queue[int] = asyncio.Queue()
         self._workers: list[asyncio.Task] = []
+        self._target = 1
 
     async def start(self) -> None:
         with session_scope() as s:
             for job in s.scalars(select(Job).where(Job.status.in_(["queued", "running"]))):
                 job.status = "queued"
                 self.queue.put_nowait(job.id)
-        for i in range(max(1, self.settings.max_concurrent_jobs)):
-            self._workers.append(asyncio.create_task(self._worker(), name=f"timelapse-worker-{i}"))
+        self.resize(self.settings.max_concurrent_jobs)
+
+    def resize(self, count: int) -> None:
+        """Run `count` workers. Surplus workers stop after their current job."""
+        self._target = max(1, count)
+        self._workers = [w for w in self._workers if not w.done()]
+        while len(self._workers) < self._target:
+            n = len(self._workers)
+            self._workers.append(asyncio.create_task(self._worker(n), name=f"timelapse-worker-{n}"))
 
     async def stop(self) -> None:
         for w in self._workers:
@@ -325,8 +337,10 @@ class JobQueue:
         log.info("Queued nightly timelapses for %d cameras", len(ids))
         return len(ids)
 
-    async def _worker(self) -> None:
+    async def _worker(self, index: int = 0) -> None:
         while True:
+            if index >= self._target:  # pool was made smaller
+                return
             job_id = await self.queue.get()
             try:
                 await self.run_job(job_id)

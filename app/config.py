@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     # Road temperature graph (Trafikverket road weather stations)
     temp_station_max_km: float = 20.0  # no graph when the nearest station is further away
     temp_collect_interval_minutes: int = 15
+    temp_overlay_default: bool = True  # graph on unless a camera says otherwise
+
+    # Admin page password. Empty disables the admin page.
+    admin_password: str = Field(default="", description="Admin page password (secret)")
 
     # Cameras enabled on first start (comma separated camera ids)
     default_enabled_cameras: str = ""

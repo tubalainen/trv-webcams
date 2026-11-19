@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import timedelta
 
 from sqlalchemy import select
 
-from app import storage, weather
+from app import cameras, storage, weather
 from app.config import Settings
 from app.db import Camera, session_scope, utcnow
 from app.trv_client import CameraInfo, TrvClient
@@ -58,11 +59,13 @@ async def sync_metadata(settings: Settings, client: TrvClient | None = None) -> 
     return len(infos)
 
 
-def _image_url(settings: Settings, info: CameraInfo) -> str:
-    if settings.trv_fullsize and info.has_fullsize:
-        sep = "&" if "?" in info.photo_url else "?"
-        return f"{info.photo_url}{sep}type=fullsize"
-    return info.photo_url
+def fullsize_url(photo_url: str) -> str:
+    sep = "&" if "?" in photo_url else "?"
+    return f"{photo_url}{sep}type=fullsize"
+
+
+def _image_url(info: CameraInfo, fullsize: bool) -> str:
+    return fullsize_url(info.photo_url) if fullsize and info.has_fullsize else info.photo_url
 
 
 async def collect_once(settings: Settings, client: TrvClient | None = None) -> int:
@@ -72,7 +75,9 @@ async def collect_once(settings: Settings, client: TrvClient | None = None) -> i
         return 0
     async with _collect_lock:
         with session_scope() as s:
-            known = {c.id: c.last_photo_time for c in s.scalars(select(Camera).where(Camera.enabled))}
+            enabled = list(s.scalars(select(Camera).where(Camera.enabled)))
+            known = {c.id: c.last_photo_time for c in enabled}
+            fullsize = {c.id: cameras.wants_fullsize(c, settings) for c in enabled}
         if not known:
             return 0
         own = client is None
@@ -92,7 +97,7 @@ async def collect_once(settings: Settings, client: TrvClient | None = None) -> i
                     if path.exists():
                         return info, path, False
                     try:
-                        data = await client.download(_image_url(settings, info))
+                        data = await client.download(_image_url(info, fullsize.get(info.id, False)))
                     except Exception as e:  # noqa: BLE001
                         log.warning("Download failed for %s: %s", info.id, e)
                         return info, None, False
@@ -147,3 +152,51 @@ async def collect_road_temps(settings: Settings, client: TrvClient | None = None
     finally:
         if own:
             await client.aclose()
+
+
+FULLSIZE_RECHECK_DAYS = 7
+
+
+async def probe_fullsize(settings: Settings, client: TrvClient | None = None, force: bool = False) -> int:
+    """Read the full size image dimensions of cameras not checked in the last week.
+
+    Only the JPEG header is read (the image server ignores Range, so the stream is cut
+    after a few kB). Returns the number of cameras checked.
+    """
+    cutoff = utcnow() - timedelta(days=FULLSIZE_RECHECK_DAYS)
+    with session_scope() as s:
+        stmt = select(Camera.id, Camera.photo_url).where(Camera.has_fullsize, Camera.photo_url != "")
+        if not force:
+            stmt = stmt.where((Camera.fullsize_checked_at.is_(None)) | (Camera.fullsize_checked_at < cutoff))
+        todo = s.execute(stmt).all()
+    if not todo:
+        return 0
+    own = client is None
+    client = client or make_client(settings)
+    sem = asyncio.Semaphore(8)
+
+    async def probe(cid: str, url: str):
+        async with sem:
+            try:
+                head = await client.read_head(fullsize_url(url))
+            except Exception as e:  # noqa: BLE001
+                log.debug("Full size check failed for %s: %s", cid, e)
+                return cid, None
+            return cid, cameras.jpeg_size(head)
+
+    try:
+        results = await asyncio.gather(*(probe(cid, url) for cid, url in todo))
+    finally:
+        if own:
+            await client.aclose()
+    now = utcnow()
+    with session_scope() as s:
+        for cid, size in results:
+            cam = s.get(Camera, cid)
+            if cam is None:
+                continue
+            cam.fullsize_width, cam.fullsize_height = size if size else (None, None)
+            cam.fullsize_checked_at = now
+    found = sum(1 for _, size in results if size)
+    log.info("Full size images: checked %d cameras, %d have one", len(results), found)
+    return len(results)

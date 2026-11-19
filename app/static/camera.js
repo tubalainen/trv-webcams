@@ -151,8 +151,15 @@ async function stepDay(dir) {
   updateNav();
 }
 
-function renderTempSetting() {
-  $("tempOverlay").checked = cam.temp_overlay;
+function option(value, label, selected) {
+  return `<option value="${value}"${value === selected ? " selected" : ""}>${esc(label)}</option>`;
+}
+
+function renderCamSettings() {
+  // Temperature graph
+  const tDef = cam.temp_overlay_default ? "på" : "av";
+  $("tempMode").innerHTML = option("default", `Standard (${tDef})`, cam.temp_overlay_mode) +
+    option("on", "På", cam.temp_overlay_mode) + option("off", "Av", cam.temp_overlay_mode);
   const st = cam.temp_station;
   let info;
   if (!st) {
@@ -166,6 +173,34 @@ function renderTempSetting() {
   }
   $("stationInfo").innerHTML = (cam.temp_overlay ? "Visas i nattkörningen och när du genererar. " :
     "Avstängd för den här kameran. ") + info;
+
+  // Image resolution
+  const fs = cam.fullsize;
+  const hdSize = fs.width ? `${fs.width}×${fs.height}` : "max";
+  const rDef = cam.resolution_default === "high" ? "högupplöst" : "lågupplöst";
+  $("resMode").innerHTML = option("default", `Standard (${rDef})`, cam.resolution_mode) +
+    option("high", `Högupplöst (${hdSize})`, cam.resolution_mode) +
+    option("low", "Lågupplöst (385×217)", cam.resolution_mode);
+  let r;
+  if (!fs.available) {
+    r = "Kameran har ingen högupplöst bild – lågupplösta bilder sparas.";
+  } else if (fs.width) {
+    r = `Kameran har högupplösta bilder: ${fs.width}×${fs.height}.`;
+  } else {
+    r = "Kameran anger att den har högupplösta bilder (upplösningen är inte kontrollerad än).";
+  }
+  r += cam.enabled
+    ? (cam.saves_fullsize ? " Nya bilder sparas högupplösta (ca 5 gånger mer lagring)." : " Nya bilder sparas lågupplösta.")
+    : " Gäller när kameran är aktiv.";
+  $("resInfo").textContent = r;
+}
+
+async function saveCamSetting(body) {
+  try {
+    await api(`api/cameras/${encodeURIComponent(camId)}`, { method: "PATCH", body });
+    await load();
+    loadStatus();
+  } catch (e) { alert(e.message); renderCamSettings(); }
 }
 
 function render() {
@@ -175,7 +210,7 @@ function render() {
     `${cam.snapshot_count} sparade bilder`, `${cam.archive_days} dagar i årsarkivet`].filter(Boolean).join(" · ");
   $("enabled").checked = cam.enabled;
   $("enabledLabel").textContent = cam.enabled ? "Aktiv – sparar bilder" : "Inaktiv";
-  renderTempSetting();
+  renderCamSettings();
   if (!shot) showLatest();
   renderTabs();
   renderClip();
@@ -213,13 +248,8 @@ $("enabled").addEventListener("change", async (ev) => {
   } catch (e) { alert(e.message); ev.target.checked = !ev.target.checked; }
 });
 
-$("tempOverlay").addEventListener("change", async (ev) => {
-  try {
-    await api(`api/cameras/${encodeURIComponent(camId)}`, { method: "PATCH", body: { temp_overlay: ev.target.checked } });
-    cam.temp_overlay = ev.target.checked;
-    renderTempSetting();
-  } catch (e) { alert(e.message); ev.target.checked = !ev.target.checked; }
-});
+$("tempMode").addEventListener("change", (ev) => saveCamSetting({ temp_overlay_mode: ev.target.value }));
+$("resMode").addEventListener("change", (ev) => saveCamSetting({ resolution_mode: ev.target.value }));
 
 $("generate").addEventListener("click", async () => {
   const chosen = [...document.querySelectorAll("#periodChecks input:checked")].map((i) => i.value);

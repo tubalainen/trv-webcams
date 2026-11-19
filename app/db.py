@@ -45,8 +45,14 @@ class Camera(Base):
     last_snapshot_path: Mapped[str | None] = mapped_column(String, nullable=True)
     snapshot_count: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
-    # Road temperature graph in timelapses (user can switch it off per camera)
-    temp_overlay: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    # Per camera choices: "default" follows the admin setting, otherwise "on"/"off"
+    # (temperature graph) and "high"/"low" (image resolution).
+    temp_overlay_mode: Mapped[str] = mapped_column(String, default="default", server_default="default")
+    resolution_mode: Mapped[str] = mapped_column(String, default="default", server_default="default")
+    # Size of the camera's full size image (?type=fullsize), read from its JPEG header
+    fullsize_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fullsize_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fullsize_checked_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
     # Nearest road weather station within TEMP_STATION_MAX_KM, set by weather.assign_stations
     station_id: Mapped[str | None] = mapped_column(String, nullable=True)
     station_distance_km: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -84,6 +90,15 @@ class Job(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime())
     started_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+
+
+class AppSetting(Base):
+    """Settings saved on the admin page (JSON values), see app.settings_store."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
 
 
 class WeatherStation(Base):
@@ -136,17 +151,19 @@ def init_db(url: str | None = None) -> None:
         cur.close()
 
     Base.metadata.create_all(_engine)
-    _add_missing_columns(_engine)
+    added = _add_missing_columns(_engine)
+    _migrate_data(_engine, added)
     _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
 
 
-def _add_missing_columns(engine) -> None:
+def _add_missing_columns(engine) -> set[str]:
     """Minimal migration: add columns that exist in the models but not in an older database.
 
     create_all() only creates missing tables. New columns must be nullable or have a
     server_default so that existing rows stay valid.
     """
     insp = inspect(engine)
+    added: set[str] = set()
     with engine.begin() as conn:
         for table in Base.metadata.sorted_tables:
             existing = {c["name"] for c in insp.get_columns(table.name)}
@@ -157,6 +174,17 @@ def _add_missing_columns(engine) -> None:
                 if col.server_default is not None:
                     ddl += f" DEFAULT '{col.server_default.arg}'"
                 conn.execute(text(ddl))
+                added.add(f"{table.name}.{col.name}")
+    return added
+
+
+def _migrate_data(engine, added: set[str]) -> None:
+    """One-off data conversions for columns that were just added."""
+    if "cameras.temp_overlay_mode" in added:
+        cols = {c["name"] for c in inspect(engine).get_columns("cameras")}
+        if "temp_overlay" in cols:  # 0.1.3 stored an on/off flag per camera
+            with engine.begin() as conn:
+                conn.execute(text("UPDATE cameras SET temp_overlay_mode = 'off' WHERE temp_overlay = 0"))
 
 
 @contextmanager

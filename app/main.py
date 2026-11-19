@@ -9,7 +9,8 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 
-from app import __version__, collector
+from app import __version__, collector, settings_store
+from app.api.admin import router as admin_router
 from app.api.routes import router
 from app.config import get_settings
 from app.db import Camera, WeatherStation, init_db, session_scope
@@ -39,6 +40,10 @@ async def _initial_sync(settings) -> None:
         await collector.collect_road_temps(settings)
     except Exception:  # noqa: BLE001
         log.exception("Initial road temperature collection failed")
+    try:
+        await collector.probe_fullsize(settings)
+    except Exception:  # noqa: BLE001
+        log.exception("Initial full size image check failed")
 
 
 @asynccontextmanager
@@ -50,6 +55,11 @@ async def lifespan(app: FastAPI):
     for d in (settings.snapshot_dir, settings.archive_dir, settings.timelapse_dir):
         d.mkdir(parents=True, exist_ok=True)
     init_db()
+    # Environment values are the start values; settings saved on the admin page win.
+    app.state.env_defaults = settings_store.env_defaults_of(settings)
+    settings_store.apply_stored(settings, app.state.env_defaults)
+    if not settings.admin_password:
+        log.info("ADMIN_PASSWORD is not set – the admin page is disabled")
     jobs = JobQueue(settings)
     app.state.jobs = jobs
     await jobs.start()
@@ -76,6 +86,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(title="TRV Webcams", version=__version__, lifespan=lifespan)
     app.include_router(router)
+    app.include_router(admin_router)
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     return app
 

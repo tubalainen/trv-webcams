@@ -237,6 +237,17 @@ class TrvClient:
                 result.append(RoadTempSample(str(mp), sample, float(value)))
         return result
 
+    async def read_head(self, url: str, max_bytes: int = 16384) -> bytes:
+        """First bytes of a resource. The image server ignores Range, so stream and stop early."""
+        buf = bytearray()
+        async with self._client.stream("GET", url) as resp:
+            resp.raise_for_status()
+            async for chunk in resp.aiter_bytes():
+                buf.extend(chunk)
+                if len(buf) >= max_bytes:
+                    break
+        return bytes(buf[:max_bytes])
+
     async def download(self, url: str) -> bytes:
         resp = await self._client.get(url)
         resp.raise_for_status()
