@@ -75,12 +75,13 @@ Timelapses skapas bara när någon trycker på **Generera**. Det finns ingen aut
 
 - **En kamera** (kamerasidan, öppen för alla):
   - **Tidsspann:** välj ett förval (senaste dygnet, 7, 14 eller 31 dygn, kvartal, år) eller ett eget spann i kalendern, med start- och sluttid. Kalendern markerar dagar med bilder: mörkare för alla bilder, ljusare för dagar som bara har en bild per timme.
+    Man kan inte välja längre bak än den första sparade bilden, och förval som skulle börja tidigare går inte att välja. Finns inga bilder alls är rutan spärrad.
   - **Övrigt:** välj MP4, GIF eller båda, längd (10, 30, 60 eller 120 s) och temperaturgraf (standard, på, av).
   - **Bibliotek:** klippet hamnar i kamerans bibliotek, där det kan spelas upp, laddas ner och tas bort (admin).
-- **Ett län eller hela Sverige** (översikten, kräver admin):
-  - Knappen **Generera timelapse för …** använder länsfiltret.
+- **Ett län eller hela Sverige** (admin-sidan, kräver inloggning):
+  - Sektionen **Generera för län eller hela Sverige** har samma genereringsruta och ett val av urval.
   - Varje aktiv kamera som har bilder i tidsspannet får ett eget klipp, och kameror utan bilder hoppas över.
-  - Förloppet visas i listan. En körning får omfatta högst 500 kameror.
+  - Förloppet visas under rutan. En körning får omfatta högst 500 kameror.
 - **Bilder:** bilderna fördelas jämnt över spannet. För dagar äldre än bildernas retention (90 dagar) används årsarkivet, med en bild per timme. Spannet kan därför vara upp till 365 dagar långt.
 - **Från tidigare versioner:** klipp som skapades av nattkörningen i 0.1.0–0.1.5 flyttas automatiskt in i biblioteket.
 

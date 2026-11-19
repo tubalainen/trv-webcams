@@ -46,8 +46,66 @@ async function showSettings() {
   $("settings").hidden = false;
   $("logout").hidden = false;
   $("cleanup").hidden = false;
+  $("batch").hidden = false;
   render();
   loadStorage();
+  setupBatch();
+}
+
+/* ---- Generate for a county or all of Sweden ---- */
+let batchGen = null;
+let batchTimer = null;
+let counties = {};
+let enabledCams = [];
+
+function batchScope() {
+  const county = $("batchScope").value;
+  return county
+    ? { scope: "county", county_no: Number(county), label: `${counties[county]} län` }
+    : { scope: "all", county_no: null, label: "hela Sverige" };
+}
+
+const enabledInScope = () => {
+  const sc = batchScope();
+  return enabledCams.filter((c) => sc.scope === "all" || c.county_no === sc.county_no).length;
+};
+
+async function pollBatch(id) {
+  clearTimeout(batchTimer);
+  try {
+    const b = await api(`api/batches/${id}`);
+    const s = b.status;
+    const done = s.done + s.failed + s.skipped;
+    $("batchProgress").textContent = `${b.county}: ${done} av ${b.total} klara` +
+      (s.failed ? `, ${s.failed} misslyckades` : "") + (s.skipped ? `, ${s.skipped} hoppades över` : "") +
+      (b.finished ? " ✓" : " …");
+    if (!b.finished) batchTimer = setTimeout(() => pollBatch(id), 3000);
+  } catch (_) { /* batch removed */ }
+}
+
+async function setupBatch() {
+  if (batchGen) return;
+  [counties, enabledCams] = await Promise.all([api("api/counties"), api("api/cameras?enabled=true")]);
+  $("batchScope").innerHTML = `<option value="">Hela Sverige</option>` + Object.entries(counties)
+    .sort((a, b) => a[1].localeCompare(b[1], "sv"))
+    .map(([no, name]) => `<option value="${no}">${esc(name)}</option>`).join("");
+  batchGen = await createGenerator($("batchGenerator"), {
+    availabilityUrl: () => {
+      const sc = batchScope();
+      return sc.scope === "county" ? `api/availability?county=${sc.county_no}` : "api/availability";
+    },
+    scopeText: () => `${batchScope().label}, ${enabledInScope()} aktiva kameror`,
+    submit: async (body) => {
+      const sc = batchScope();
+      const b = await api("api/admin/batches", { method: "POST", body: { ...body, scope: sc.scope, county_no: sc.county_no } });
+      pollBatch(b.id);
+      const skipped = b.skipped_cameras
+        ? ` ${b.skipped_cameras} saknar bilder i tidsspannet och hoppas över (${b.skipped_names.slice(0, 5).join(", ")}${b.skipped_cameras > 5 ? " …" : ""}).`
+        : "";
+      return `Startad: ${b.total} kameror i kö.${skipped}`;
+    },
+  });
+  $("batchScope").addEventListener("change", () => batchGen.reloadAvailability());
 }
 
 /* ---- Storage and cleanup ---- */

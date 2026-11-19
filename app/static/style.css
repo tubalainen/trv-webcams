@@ -145,6 +145,7 @@ a { color: var(--accent); }
 
 /* Generate dialog and calendar */
 .gen-card { margin: 16px 0; }
+.batch-scope { max-width: 320px; margin: 0 0 12px; }
 .gen-card h2 { margin-top: 0; }
 .generator { display: grid; gap: 12px; }
 .gen-presets { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -157,28 +158,21 @@ a { color: var(--accent); }
   color: var(--text); font: inherit; font-size: .88em; cursor: pointer; position: relative; }
 .cal-day:hover:not(:disabled) { border-color: var(--accent); }
 .cal-day:disabled { color: var(--muted); opacity: .4; cursor: default; }
-.cal-day.snap { background: color-mix(in srgb, var(--on) 30%, transparent); }
-.cal-day.arch { background: color-mix(in srgb, var(--on) 12%, transparent); }
+.cal-day.snap { background: color-mix(in srgb, var(--on) 45%, transparent); }
+.cal-day.arch { background: color-mix(in srgb, var(--on) 20%, transparent); }
 .cal-day.in-range { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: -2px; }
 .cal-day.start, .cal-day.end { background: var(--accent); color: #fff; }
 .cal-day.today { font-weight: 700; }
 .cal-legend { display: flex; gap: 14px; margin-top: 6px; font-size: .8em; }
 .cal-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; }
-.cal-dot.snap { background: color-mix(in srgb, var(--on) 30%, transparent); }
-.cal-dot.arch { background: color-mix(in srgb, var(--on) 12%, transparent); border: 1px solid var(--border); }
+.cal-dot.snap { background: color-mix(in srgb, var(--on) 45%, transparent); }
+.cal-dot.arch { background: color-mix(in srgb, var(--on) 20%, transparent); border: 1px solid var(--border); }
 .gen-times, .gen-opts { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: end; }
 .gen-dt { display: flex; gap: 8px; align-items: center; font-weight: 400; }
 .gen-formats { border: 0; padding: 0; margin: 0; display: flex; gap: 12px; align-items: center; }
 .gen-formats legend { font-weight: 500; padding: 0; margin-bottom: 4px; }
 .gen-summary { margin: 0; }
 .gen-result { font-size: .92em; }
-.gen-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px;
-  border-bottom: 1px solid var(--border); }
-.gen-dialog { max-width: 560px; width: calc(100% - 32px); border: 1px solid var(--border); border-radius: 10px;
-  background: var(--panel); color: var(--text); padding: 18px; }
-.gen-dialog::backdrop { background: rgb(0 0 0 / .45); }
-.gen-dialog h2 { margin: 0 0 6px; font-size: 1.15em; }
-.dialog-close { float: right; }
 
 /* Clip library */
 .clip-list { display: grid; gap: 10px; }

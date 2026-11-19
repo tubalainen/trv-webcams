@@ -29,8 +29,32 @@ async function createGenerator(root, opts) {
     start: null, end: null, endNow: true,
     snap: new Set(), arch: new Set(),
   };
-  const minDay = new Date(today);
-  minDay.setDate(minDay.getDate() - o.max_days);
+  const retentionDay = new Date(today);
+  retentionDay.setDate(retentionDay.getDate() - o.max_days);
+  // Earliest selectable day: the first day with saved images (never before the retention)
+  let minDay = new Date(today);
+  let firstKey = null; // YYYY-MM-DD of the oldest image, null when there are none
+
+  function updateLimits() {
+    const all = [...st.snap, ...st.arch].sort();
+    firstKey = all.length ? all[0] : null;
+    const first = firstKey ? new Date(`${firstKey}T00:00`) : new Date(today);
+    minDay = first > retentionDay ? first : retentionDay;
+    minDay.setHours(0, 0, 0, 0);
+    // Drop a selection that starts before the oldest image
+    if (st.start && (!firstKey || st.start < isoDate(minDay))) { st.start = null; st.end = null; }
+    if (st.month < new Date(minDay.getFullYear(), minDay.getMonth(), 1)) {
+      st.month = new Date(minDay.getFullYear(), minDay.getMonth(), 1);
+    }
+    for (const b of root.querySelectorAll("[data-preset]")) {
+      const start = new Date();
+      start.setDate(start.getDate() - Number(b.dataset.preset));
+      const tooEarly = !firstKey || isoDate(start) < firstKey;
+      b.disabled = tooEarly;
+      b.title = !firstKey ? "Det finns inga sparade bilder ännu"
+        : tooEarly ? `Bilder finns från ${firstKey}` : "";
+    }
+  }
 
   root.classList.add("generator");
   root.innerHTML = `
@@ -96,8 +120,10 @@ async function createGenerator(root, opts) {
     const r = rangeDates();
     const fmts = [...root.querySelectorAll(".gen-formats input:checked")].map((i) => i.value.toUpperCase());
     let text;
-    if (!r) {
-      text = "Välj ett förval eller klicka på en start- och slutdag i kalendern.";
+    if (!firstKey) {
+      text = "Det finns inga sparade bilder ännu. Aktivera kameran och vänta tills bilder har hämtats.";
+    } else if (!r) {
+      text = `Välj ett förval eller klicka på en start- och slutdag i kalendern. Bilder finns från ${firstKey}.`;
     } else {
       const { n, archOnly } = daysWithImages(isoDate(r.start), isoDate(r.end));
       const dur = q(".gen-duration").value;
@@ -107,7 +133,7 @@ async function createGenerator(root, opts) {
       if (!n) text += " – det finns inga bilder i tidsspannet.";
     }
     q(".gen-summary").textContent = text;
-    q(".gen-go").disabled = !r || !fmts.length;
+    q(".gen-go").disabled = !firstKey || !r || !fmts.length;
     q(".gen-start-day").textContent = st.start || "–";
     q(".gen-end-day").textContent = st.endNow ? "nu" : (st.end || st.start || "–");
     q(".gen-end-time").disabled = st.endNow;
@@ -130,7 +156,7 @@ async function createGenerator(root, opts) {
       if (key === st.start) cls.push("start");
       if (key === endSel) cls.push("end");
       if (key === isoDate(today)) cls.push("today");
-      const off = date > today || date < minDay;
+      const off = !firstKey || date > today || date < minDay;
       html += `<button type="button" class="${cls.join(" ")}" data-day="${key}"${off ? " disabled" : ""}
         aria-pressed="${cls.includes("in-range")}">${d}</button>`;
     }
@@ -211,6 +237,7 @@ async function createGenerator(root, opts) {
       st.snap = new Set(a.snapshots);
       st.arch = new Set(a.archive_only);
     } catch (_) { st.snap = new Set(); st.arch = new Set(); }
+    updateLimits();
     renderCalendar();
   }
 
