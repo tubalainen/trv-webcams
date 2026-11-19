@@ -49,17 +49,65 @@ def _probe_cmd(mode: str, vaapi_device: str) -> list[str]:
     return base + src + ["-vf", "format=yuv420p", "-c:v", ENCODERS[mode], "-f", "null", "-"]
 
 
-def encoder_works(mode: str, vaapi_device: str = "/dev/dri/renderD128") -> bool:
+def probe_encoder(mode: str, vaapi_device: str = "/dev/dri/renderD128") -> tuple[bool, str]:
+    """Encode a short test clip; returns (ok, reason when not ok)."""
     try:
-        r = subprocess.run(_probe_cmd(mode, vaapi_device), capture_output=True, timeout=30)
+        r = subprocess.run(_probe_cmd(mode, vaapi_device), capture_output=True, timeout=30, text=True)
+    except subprocess.TimeoutExpired:
+        return False, "timed out after 30 s"
+    except OSError as e:
+        return False, str(e)
+    if r.returncode == 0:
+        return True, ""
+    noise = ("Nothing was written", "Error parsing global options", "Conversion failed")
+    lines = [
+        ln.strip() for ln in (r.stderr or "").splitlines() if ln.strip() and not any(n in ln for n in noise)
+    ]
+    return False, " | ".join(lines[:2]) or f"ffmpeg exit code {r.returncode}"
+
+
+def encoder_works(mode: str, vaapi_device: str = "/dev/dri/renderD128") -> bool:
+    return probe_encoder(mode, vaapi_device)[0]
+
+
+def nvidia_gpus() -> list[str] | None:
+    """GPUs reported by nvidia-smi, or None when no NVIDIA GPU is visible in the container.
+
+    nvidia-smi is mounted into the container by the NVIDIA Container Toolkit
+    (NVIDIA_DRIVER_CAPABILITIES must include "utility").
+    """
+    smi = shutil.which("nvidia-smi")
+    if not smi:
+        return None
+    try:
+        r = subprocess.run(
+            [smi, "--query-gpu=name,driver_version,memory.total", "--format=csv,noheader"],
+            capture_output=True,
+            timeout=15,
+            text=True,
+        )
     except (OSError, subprocess.TimeoutExpired):
-        return False
-    return r.returncode == 0
+        return None
+    if r.returncode != 0:
+        return None
+    gpus = []
+    for line in r.stdout.splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) == 3:
+            gpus.append(f"{parts[0]} (driver {parts[1]}, {parts[2]})")
+    return gpus or None
 
 
 def detect_encoder(
-    preference: str = "auto", vaapi_device: str = "/dev/dri/renderD128", probe=encoder_works
+    preference: str = "auto",
+    vaapi_device: str = "/dev/dri/renderD128",
+    probe=probe_encoder,
+    gpus: list[str] | None = None,
 ) -> EncoderChoice:
+    """Pick the first working encoder and log a hardware report.
+
+    `probe(mode, vaapi_device)` returns either a bool or (ok, reason).
+    """
     preference = (preference or "auto").lower()
     if preference in ("nvenc", "cuda"):
         preference = "nvidia"
@@ -67,12 +115,38 @@ def detect_encoder(
         candidates = [preference, "cpu"]
     else:
         candidates = ["nvidia", "vaapi", "qsv", "cpu"]
+
+    log.info("Hardware acceleration check (HWACCEL=%s)", preference)
+    if gpus:
+        for g in gpus:
+            log.info("  NVIDIA GPU found: %s", g)
+    elif "nvidia" in candidates:
+        log.info("  No NVIDIA GPU visible in the container (nvidia-smi not available)")
+
     for mode in candidates:
-        if mode == "cpu" or probe(mode, vaapi_device):
-            if preference not in ("auto", mode):
-                log.warning("Requested HWACCEL=%s not available, falling back to %s", preference, mode)
-            log.info("Using video encoder %s (%s)", ENCODERS[mode], mode)
-            return EncoderChoice(mode, ENCODERS[mode])
+        if mode == "cpu":
+            ok, reason = True, ""
+        else:
+            res = probe(mode, vaapi_device)
+            ok, reason = res if isinstance(res, tuple) else (bool(res), "")
+        if not ok:
+            log.info("  %-6s %-11s FAILED%s", mode, ENCODERS[mode], f": {reason}" if reason else "")
+            if mode == "nvidia" and gpus:
+                log.warning(
+                    "NVIDIA GPU is visible but NVENC does not work. Check that "
+                    "NVIDIA_DRIVER_CAPABILITIES includes 'video' and that the GPU supports NVENC."
+                )
+            continue
+        log.info("  %-6s %-11s OK", mode, ENCODERS[mode])
+        if mode == "cpu" and preference in ("auto", "nvidia") and not gpus:
+            log.warning(
+                "Using CPU encoding. For NVIDIA: install the NVIDIA Container Toolkit on the host "
+                "and keep the 'deploy: resources: reservations: devices' block in docker-compose."
+            )
+        if preference not in ("auto", mode):
+            log.warning("Requested HWACCEL=%s not available, falling back to %s", preference, mode)
+        log.info("Using video encoder %s (%s)", ENCODERS[mode], "GPU" if mode != "cpu" else "CPU")
+        return EncoderChoice(mode, ENCODERS[mode])
     return EncoderChoice("cpu", "libx264")  # pragma: no cover
 
 

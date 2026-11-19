@@ -43,8 +43,8 @@ async def lifespan(app: FastAPI):
     jobs = JobQueue(settings)
     app.state.jobs = jobs
     await jobs.start()
-    # Detect the encoder in the background so the status page can show it early
-    asyncio.get_running_loop().run_in_executor(None, lambda: jobs.encoder.choice)
+    # Check the GPU / hardware encoder at startup so the result shows up in the container log
+    await asyncio.to_thread(lambda: jobs.encoder.choice)
     sched = None
     if settings.scheduler_enabled:
         if not settings.trv_api_key:

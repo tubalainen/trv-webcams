@@ -49,3 +49,29 @@ def test_api_flow(settings):
         assert c.get("/media/timelapses/CAM_1/1d.mp4").status_code == 404
         assert c.get("/media/timelapses/..%2F/1d.mp4").status_code == 404
         assert "TRV Webbkameror" in c.get("/").text
+
+
+def test_snapshot_browsing(settings):
+    base = settings.snapshot_dir / "CAM_1"
+    for day, names in {"2026-11-18": ["235500", "000500"], "2026-11-19": ["084145", "083645"]}.items():
+        (base / day).mkdir(parents=True)
+        for n in names:
+            (base / day / f"{n}.jpg").write_bytes(b"jpg-" + n.encode())
+    (base / "2026-11-19" / "x.tmp").write_bytes(b"")
+    with _client(settings) as c:
+        r = c.get("/api/cameras/CAM_1/snapshots").json()
+        assert r["days"] == ["2026-11-18", "2026-11-19"] and r["day"] == "2026-11-19"
+        assert r["frames"] == ["083645", "084145"]
+        r = c.get("/api/cameras/CAM_1/snapshots", params={"day": "2026-11-18"}).json()
+        assert r["frames"] == ["000500", "235500"]
+        assert c.get("/api/cameras/CAM_1/snapshots", params={"day": "2026-11-01"}).json()["frames"] == []
+        assert c.get("/api/cameras/CAM_1/snapshots", params={"day": "../x"}).status_code == 400
+        assert c.get("/api/cameras/CAM_2/snapshots").json() == {"days": [], "day": None, "frames": []}
+        assert c.get("/api/cameras/NOPE/snapshots").status_code == 404
+
+        img = c.get("/api/cameras/CAM_1/snapshots/2026-11-19/084145.jpg")
+        assert img.status_code == 200 and img.content == b"jpg-084145"
+        assert img.headers["content-type"] == "image/jpeg"
+        assert c.get("/api/cameras/CAM_1/snapshots/2026-11-19/090000.jpg").status_code == 404
+        assert c.get("/api/cameras/CAM_1/snapshots/2026-11-19/..%2F..%2Fapp.db").status_code == 404
+        assert c.get("/api/cameras/CAM_1/snapshots/..%2F..%2F/084145.jpg").status_code == 404
