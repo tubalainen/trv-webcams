@@ -7,7 +7,7 @@ import logging
 
 from sqlalchemy import select
 
-from app import storage
+from app import storage, weather
 from app.config import Settings
 from app.db import Camera, session_scope, utcnow
 from app.trv_client import CameraInfo, TrvClient
@@ -125,3 +125,25 @@ async def collect_once(settings: Settings, client: TrvClient | None = None) -> i
                     new += 1
         log.info("Collected %d new snapshots from %d enabled cameras", new, len(known))
         return new
+
+
+async def sync_weather_stations(settings: Settings, client: TrvClient | None = None) -> int:
+    """Fetch road weather stations and link each camera to the nearest one."""
+    own = client is None
+    client = client or make_client(settings)
+    try:
+        return await weather.sync_stations(settings, client)
+    finally:
+        if own:
+            await client.aclose()
+
+
+async def collect_road_temps(settings: Settings, client: TrvClient | None = None) -> int:
+    """Store new road temperatures for the stations of enabled cameras (7 days back for new ones)."""
+    own = client is None
+    client = client or make_client(settings)
+    try:
+        return await weather.collect_temps(settings, client)
+    finally:
+        if own:
+            await client.aclose()

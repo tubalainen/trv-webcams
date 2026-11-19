@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from app import __version__, collector
 from app.api.routes import router
 from app.config import get_settings
-from app.db import Camera, init_db, session_scope
+from app.db import Camera, WeatherStation, init_db, session_scope
 from app.scheduler import build_scheduler
 from app.timelapse import JobQueue
 
@@ -24,11 +24,21 @@ log = logging.getLogger("trv_webcams")
 async def _initial_sync(settings) -> None:
     with session_scope() as s:
         count = s.scalar(select(func.count()).select_from(Camera)) or 0
+        stations = s.scalar(select(func.count()).select_from(WeatherStation)) or 0
     if count == 0:
         try:
             await collector.sync_metadata(settings)
         except Exception:  # noqa: BLE001
             log.exception("Initial camera sync failed")
+    if stations == 0 or count == 0:
+        try:
+            await collector.sync_weather_stations(settings)
+        except Exception:  # noqa: BLE001
+            log.exception("Initial road weather station sync failed")
+    try:
+        await collector.collect_road_temps(settings)
+    except Exception:  # noqa: BLE001
+        log.exception("Initial road temperature collection failed")
 
 
 @asynccontextmanager

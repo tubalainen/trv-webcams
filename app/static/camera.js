@@ -21,7 +21,8 @@ function renderClip() {
     return;
   }
   const mp4 = tl.mp4, gif = tl.gif;
-  const meta = (t) => t ? `${t.frames} bilder · ${fmtBytes(t.size_bytes)} · ${esc(t.encoder)} · skapad ${fmtTime(t.created_at)}` : "";
+  const meta = (t) => t ? `${t.frames} bilder · ${fmtBytes(t.size_bytes)} · ${esc(t.encoder)}` +
+    `${t.temp_station ? ` · vägtemp. ${esc(t.temp_station)}` : ""} · skapad ${fmtTime(t.created_at)}` : "";
   $("clip").innerHTML = `
     <div class="clip-grid">
       ${mp4 ? `<div><h3>Video (MP4)</h3>
@@ -150,6 +151,23 @@ async function stepDay(dir) {
   updateNav();
 }
 
+function renderTempSetting() {
+  $("tempOverlay").checked = cam.temp_overlay;
+  const st = cam.temp_station;
+  let info;
+  if (!st) {
+    info = `Ingen vägväderstation inom ${cam.temp_station_max_km} km – timelapses skapas utan graf.`;
+  } else {
+    const km = st.distance_km != null ? `${String(st.distance_km).replace(".", ",")} km bort` : "";
+    const last = st.last_value != null
+      ? ` Senast ${String(st.last_value.toFixed(1)).replace(".", ",").replace("-", "−")} °C (${fmtTime(st.last_sample)}).`
+      : " Ingen temperatur hämtad ännu.";
+    info = `Vägväderstation ${esc(st.name)}, ${km}.${last}`;
+  }
+  $("stationInfo").innerHTML = (cam.temp_overlay ? "Visas i nattkörningen och när du genererar. " :
+    "Avstängd för den här kameran. ") + info;
+}
+
 function render() {
   document.title = `${cam.name} – TRV Webbkameror`;
   $("camName").textContent = cam.name;
@@ -157,6 +175,7 @@ function render() {
     `${cam.snapshot_count} sparade bilder`, `${cam.archive_days} dagar i årsarkivet`].filter(Boolean).join(" · ");
   $("enabled").checked = cam.enabled;
   $("enabledLabel").textContent = cam.enabled ? "Aktiv – sparar bilder" : "Inaktiv";
+  renderTempSetting();
   if (!shot) showLatest();
   renderTabs();
   renderClip();
@@ -191,6 +210,14 @@ $("enabled").addEventListener("change", async (ev) => {
     await api(`api/cameras/${encodeURIComponent(camId)}`, { method: "PATCH", body: { enabled: ev.target.checked } });
     await load();
     loadStatus();
+  } catch (e) { alert(e.message); ev.target.checked = !ev.target.checked; }
+});
+
+$("tempOverlay").addEventListener("change", async (ev) => {
+  try {
+    await api(`api/cameras/${encodeURIComponent(camId)}`, { method: "PATCH", body: { temp_overlay: ev.target.checked } });
+    cam.temp_overlay = ev.target.checked;
+    renderTempSetting();
   } catch (e) { alert(e.message); ev.target.checked = !ev.target.checked; }
 });
 

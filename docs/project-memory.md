@@ -7,6 +7,8 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 | Version | Datum | Issue | PR | Ändring |
 |---------|-------|-------|----|---------|
+| 0.1.3 | 2026-11-19 | #11 | #12 | Graf med vägtemperatur i timelapse och GIF, av/på per kamera |
+| 0.1.3 | 2026-11-19 | – | #10 | Python 3.15 (ersätter Dependabot #1), pip tas bort oberoende av version |
 | 0.1.2 | 2026-11-19 | #8 | #6 | Bläddra fram/tillbaka bland sparade bilder på kamerasidan |
 | 0.1.2 | 2026-11-19 | #9 | #6 | GPU-/hårdvarukontroll vid start, rapport i `docker compose logs` |
 | 0.1.2 | 2026-11-19 | – | #6 | CLAUDE.md, projektminne, hemlighetskontroll i CI |
@@ -27,6 +29,18 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 - **GPU:** `HWACCEL=auto` provar NVENC → VAAPI → QSV → CPU med en riktig
   provkodning vid start. GIF görs alltid på CPU.
 
+- **Vägtemperatur:** `Surface.Temperature` från Trafikverkets vägväderstationer. Kameran kopplas
+  till närmaste station som *har* vägytesensor (40 av 831 stationer mäter bara luft) inom
+  20 km. Trafikverket sparar bara cirka 7 dygn, så appen sparar själv i tabellen
+  `road_temperatures` (365 dagar). Grafen ritas med Pillow, en PNG per videoruta (identiska
+  rutor delar fil), och läggs på med ffmpeg `overlay` före kodningen. NVENC påverkas alltså inte.
+- **Typsnitt:** Pillows inbyggda typsnitt saknar å, ä, ö och "−". Imagen installerar därför
+  `fonts-dejavu-core`, som också installeras i CI.
+- **Upplösning:** källbilder som är smalare än 768 px skalas upp med en heltalsfaktor, så att
+  grafens text går att läsa (normalbilderna är 384×216).
+- **Databas:** `db._add_missing_columns` lägger till nya kolumner i befintliga databaser. Nya
+  kolumner måste vara nullable eller ha `server_default`.
+
 ## Bra att veta
 
 - Användarens server: `/opt/trv-webcams`. Den kör `ghcr.io/tubalainen/trv-webcams:latest`
@@ -35,5 +49,7 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
   (`TIMEZONE`). Arkivet `/data/archive` har en bild per timme i 365 dagar
   (hårdlänkar).
 - Bläddringen visar bara `snapshots` (90 dagar). Arkivbilder ingår inte än.
+- Trafikverkets bild-URL är fast per kamera och visar alltid den senaste bilden. Det finns
+  ingen bildhistorik i API:t. Trafikflödeskameror uppdateras var 1–2 minut, väglagskameror var 5–10 minut.
 - Molnsandlådan har ingen GPU, och `docker build` stoppas av proxyn vid pip.
   Docker-bygget verifieras därför i CI.

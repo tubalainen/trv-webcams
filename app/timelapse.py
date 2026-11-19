@@ -12,7 +12,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from app import ffmpeg, storage
+from app import ffmpeg, overlay, storage, weather
 from app.config import Settings
 from app.db import Camera, Job, Timelapse, session_scope, utcnow
 
@@ -84,10 +84,75 @@ class Encoder:
         self._choice = ffmpeg.EncoderChoice("cpu", "libx264")
 
 
+# Trafikverket's normal images are only 384 px wide. Smaller sources are scaled up by
+# a whole factor so the temperature graph text stays readable in the video.
+MIN_VIDEO_WIDTH = 768
+
+# Share of the frame width used by the temperature graph
+MP4_GRAPH_FRACTION = 0.30
+GIF_GRAPH_FRACTION = 0.45  # GIFs are small, the graph needs a larger share to stay readable
+
+
+@dataclass
+class TempGraph:
+    station: str
+    samples: list[tuple[datetime, float]]
+
+
+def temp_graph_for(
+    settings: Settings, camera_id: str, start: datetime, end: datetime, enabled: bool | None = None
+) -> tuple[TempGraph | None, str]:
+    """Road temperature data for the clip, or None plus a short reason (empty when switched off)."""
+    with session_scope() as s:
+        cam = s.get(Camera, camera_id)
+        if cam is None:
+            return None, ""
+        use = cam.temp_overlay if enabled is None else enabled
+        station_id = cam.station_id
+    if not use:
+        return None, ""
+    if not station_id:
+        return None, f"ingen vägväderstation inom {settings.temp_station_max_km:g} km"
+    samples = weather.series(station_id, start, end)
+    if not samples:
+        return None, "ingen vägtemperatur sparad för perioden"
+    return TempGraph(weather.station_name(station_id) or station_id, samples), ""
+
+
+def _render_overlay(
+    settings: Settings,
+    graph: TempGraph,
+    frames: list[Path],
+    start: datetime,
+    end: datetime,
+    width: int,
+    fraction: float,
+    fps: int,
+    out_dir: Path,
+    prefix: str,
+) -> tuple[Path, int]:
+    """Render the graph for each frame and write an ffconcat list. Returns (list, margin)."""
+    info = overlay.overlay_size(width, fraction)
+    renderer = overlay.GraphRenderer(graph.samples, start, end, info.width, info.height, settings.timezone)
+    times = [storage.frame_time(f, settings.timezone) or end for f in frames]
+    pngs = overlay.render_sequence(renderer, times, out_dir, prefix)
+    concat = out_dir / f"{prefix}overlay.ffconcat"
+    ffmpeg.write_concat_file(pngs, fps, concat)
+    return concat, info.margin
+
+
 async def generate(
-    settings: Settings, encoder: Encoder, camera_id: str, period_key: str, now: datetime | None = None
+    settings: Settings,
+    encoder: Encoder,
+    camera_id: str,
+    period_key: str,
+    now: datetime | None = None,
+    temp_overlay: bool | None = None,
 ) -> str:
-    """Generate MP4 + GIF for one camera/period. Returns a short status message."""
+    """Generate MP4 + GIF for one camera/period. Returns a short status message.
+
+    temp_overlay=None uses the camera's own setting.
+    """
     period = PERIODS[period_key]
     frames, start, end = await asyncio.to_thread(select_frames, settings, camera_id, period, now)
     if len(frames) < MIN_FRAMES:
@@ -96,6 +161,10 @@ async def generate(
     mp4_frames = subsample(frames, period.target_seconds * settings.output_fps)
     gif_frames = subsample(frames, settings.gif_max_frames)
     size = await asyncio.to_thread(ffmpeg.probe_size, frames[-1]) or (1280, 720)
+    if size[0] < MIN_VIDEO_WIDTH:
+        factor = -(-MIN_VIDEO_WIDTH // size[0])
+        size = (size[0] * factor, size[1] * factor)
+    graph, graph_note = await asyncio.to_thread(temp_graph_for, settings, camera_id, start, end, temp_overlay)
 
     mp4_out = storage.timelapse_path(settings, camera_id, period.key, "mp4")
     gif_out = storage.timelapse_path(settings, camera_id, period.key, "gif")
@@ -108,23 +177,69 @@ async def generate(
         ffmpeg.write_concat_file(gif_frames, settings.gif_fps, gif_list)
         mp4_tmp, gif_tmp = tmpd / "out.mp4", tmpd / "out.gif"
 
+        mp4_ov = gif_ov = None
+        mp4_margin, gif_margin = 12, 6
+        if graph is not None:
+            mp4_ov, mp4_margin = await asyncio.to_thread(
+                _render_overlay,
+                settings,
+                graph,
+                mp4_frames,
+                start,
+                end,
+                size[0],
+                MP4_GRAPH_FRACTION,
+                settings.output_fps,
+                tmpd,
+                "mp4_",
+            )
+            gif_ov, gif_margin = await asyncio.to_thread(
+                _render_overlay,
+                settings,
+                graph,
+                gif_frames,
+                start,
+                end,
+                settings.gif_width,
+                GIF_GRAPH_FRACTION,
+                settings.gif_fps,
+                tmpd,
+                "gif_",
+            )
+
+        def mp4_cmd(enc: ffmpeg.EncoderChoice) -> list[str]:
+            return ffmpeg.mp4_command(
+                mp4_list,
+                mp4_tmp,
+                enc,
+                settings.output_fps,
+                size[0],
+                size[1],
+                settings.vaapi_device,
+                overlay=mp4_ov,
+                overlay_margin=mp4_margin,
+            )
+
         enc = encoder.choice
         try:
-            await ffmpeg.run(
-                ffmpeg.mp4_command(
-                    mp4_list, mp4_tmp, enc, settings.output_fps, size[0], size[1], settings.vaapi_device
-                )
-            )
+            await ffmpeg.run(mp4_cmd(enc))
         except RuntimeError as e:
             if enc.mode == "cpu":
                 raise
             log.warning("%s encoding failed (%s), retrying on CPU", enc.codec, e)
             encoder.downgrade()
             enc = encoder.choice
-            await ffmpeg.run(
-                ffmpeg.mp4_command(mp4_list, mp4_tmp, enc, settings.output_fps, size[0], size[1])
+            await ffmpeg.run(mp4_cmd(enc))
+        await ffmpeg.run(
+            ffmpeg.gif_command(
+                gif_list,
+                gif_tmp,
+                settings.gif_width,
+                settings.gif_fps,
+                overlay=gif_ov,
+                overlay_margin=gif_margin,
             )
-        await ffmpeg.run(ffmpeg.gif_command(gif_list, gif_tmp, settings.gif_width, settings.gif_fps))
+        )
         os.replace(mp4_tmp, mp4_out)
         os.replace(gif_tmp, gif_out)
 
@@ -148,7 +263,13 @@ async def generate(
             row.range_start = start.astimezone(UTC).replace(tzinfo=None)
             row.range_end = end.astimezone(UTC).replace(tzinfo=None)
             row.created_at = utcnow()
-    return f"{period.label}: {len(mp4_frames)} bilder ({enc.codec})"
+            row.temp_station = graph.station if graph else ""
+    temp = (
+        f", vägtemp. {graph.station}"
+        if graph
+        else (f", utan temperaturgraf: {graph_note}" if graph_note else "")
+    )
+    return f"{period.label}: {len(mp4_frames)} bilder ({enc.codec}{temp})"
 
 
 class JobQueue:

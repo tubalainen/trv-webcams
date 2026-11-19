@@ -6,6 +6,7 @@ Webbapplikation som sparar bilder från Trafikverkets webbkameror och skapar tim
 - **Du väljer själv vilka kameror som är aktiva.** Bara aktiva kameror sparar bilder och får timelapses, så att du inte lagrar hela Sveriges kameranät. Du kan också aktivera eller avaktivera alla kameror i ett län på en gång.
 - **Nattlig körning** (02:00) som skapar timelapses för **1, 7, 14 och 31 dygn, ett kvartal och ett år**, både som MP4 och GIF.
 - Knappen **"Generera timelapse"** på varje kamerasida skapar en timelapse direkt.
+- **Graf med vägtemperatur** i timelapses och GIF:ar. Grafen hämtar data från närmaste vägväderstation inom 20 km och ritas fram bild för bild. Den är påslagen som standard och kan stängas av per kamera.
 - **Retention:** alla bilder sparas i 90 dagar. Den första bilden varje timme sparas i ett glest arkiv i 365 dagar, så att det går att göra årsklippet.
 - Webbgränssnittet lyssnar på port **8933** och är på svenska.
 
@@ -67,6 +68,18 @@ Statusraden visar hur mycket som används nu och en uppskattning för när reten
 
 Containern startar som root, sätter ägare på `/data` till `PUID:PGID` (standard `1000:1000`) och kör sedan appen som den användaren. En `./data`-mapp som Docker har skapat som root fungerar därför direkt. Ägaren ändras bara när något i `/data` har fel ägare. Kör du containern med `user:` i compose eller `--user` hoppas det steget över, och då måste mappen redan vara skrivbar för den användaren.
 
+## Vägtemperatur i timelapses
+
+Nere till höger i varje timelapse och GIF visas en liten graf över **vägytans temperatur**:
+- X-axeln täcker hela klippets period, och kurvan ritas fram till den aktuella bildens tidpunkt.
+- Det aktuella värdet visas blått vid 0 °C och kallare, annars orange.
+- En streckad linje markerar 0 °C, och längst ner står periodens lägsta och högsta värde.
+
+- **Datakälla:** Trafikverkets vägväderstationer (`WeatherMeasurepoint`/`WeatherObservation`). Varje kamera kopplas till närmaste station *som mäter vägytans temperatur* inom `TEMP_STATION_MAX_KM` (standard 20 km). Stationen och det senaste värdet visas på kamerasidan.
+- **Historik:** Trafikverket sparar bara cirka 7 dygns mätningar. Appen hämtar därför vägtemperaturen var 15:e minut för stationerna som hör till aktiva kameror och sparar den i 365 dagar, lika länge som årsarkivet. När en kamera aktiveras hämtas de senaste 7 dygnen direkt. Grafer för längre perioder fylls på med tiden, och det som saknas lämnas tomt.
+- **Av och på:** grafen är påslagen som standard i nattkörningen. Under *Generera timelapse* på kamerasidan kan den stängas av för just den kameran.
+- **Upplösning:** Trafikverkets normala bilder är bara cirka 384 pixlar breda. Videon skalas därför upp till minst 768 pixlars bredd, så att grafens text går att läsa.
+
 ## Konfiguration
 
 Alla inställningar finns i [`.env.example`](.env.example). De viktigaste:
@@ -82,6 +95,8 @@ Alla inställningar finns i [`.env.example`](.env.example). De viktigaste:
 | `NIGHTLY_HOUR` / `NIGHTLY_MINUTE` | `2` / `0` | När nattkörningen startar |
 | `HWACCEL` | `auto` | `auto`, `nvidia`, `vaapi`, `qsv` eller `cpu` |
 | `MAX_CONCURRENT_JOBS` | `2` | Antal timelapse-jobb som körs samtidigt |
+| `TEMP_STATION_MAX_KM` | `20` | Största avstånd till en vägväderstation för temperaturgrafen |
+| `TEMP_COLLECT_INTERVAL_MINUTES` | `15` | Hur ofta vägtemperatur hämtas |
 | `DEFAULT_ENABLED_CAMERAS` | – | Kamera-id:n som aktiveras vid första start |
 | `PUID` / `PGID` | `1000` / `1000` | Användare och grupp som appen körs som i containern |
 

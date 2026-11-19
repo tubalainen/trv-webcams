@@ -29,6 +29,10 @@ def test_api_flow(settings):
         assert c.get("/api/cameras", params={"q": "kir"}).json()[0]["id"] == "CAM_2"
 
         assert c.patch("/api/cameras/CAM_1", json={"enabled": True}).json()["enabled"] is True
+        r = c.patch("/api/cameras/CAM_1", json={"temp_overlay": False}).json()
+        assert r["temp_overlay"] is False and r["enabled"] is True
+        assert c.get("/api/cameras/CAM_1").json()["temp_overlay"] is False
+        assert c.get("/api/cameras/CAM_1").json()["temp_station"] is None
         assert [x["id"] for x in c.get("/api/cameras", params={"enabled": True}).json()] == ["CAM_1"]
         assert c.post("/api/cameras/bulk", json={"county": 25, "enabled": True}).json() == {"updated": 1}
 

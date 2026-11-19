@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
-from app import storage
+from app import storage, weather
 from app.config import Settings
 from app.db import Camera, session_scope
 
@@ -42,8 +42,14 @@ def run_retention(settings: Settings, today: date | None = None) -> dict[str, in
     today = today or datetime.now(ZoneInfo(settings.timezone)).date()
     snap = prune(settings.snapshot_dir, settings.snapshot_retention_days, today)
     arch = prune(settings.archive_dir, settings.archive_retention_days, today)
+    temps = weather.prune(settings)
     with session_scope() as s:
         for cam in s.scalars(select(Camera).where(Camera.snapshot_count > 0)):
             cam.snapshot_count = count_snapshots(settings, cam.id)
-    log.info("Retention removed %d snapshot day-dirs and %d archive day-dirs", snap, arch)
-    return {"snapshot_days_removed": snap, "archive_days_removed": arch}
+    log.info(
+        "Retention removed %d snapshot day-dirs, %d archive day-dirs and %d road temperatures",
+        snap,
+        arch,
+        temps,
+    )
+    return {"snapshot_days_removed": snap, "archive_days_removed": arch, "road_temps_removed": temps}

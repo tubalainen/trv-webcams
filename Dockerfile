@@ -20,7 +20,7 @@ LABEL org.opencontainers.image.title="trv-webcams" \
 # VAAPI and QSV support. Security updates come through apt.
 RUN apt-get update \
  && apt-get upgrade -y \
- && apt-get install -y --no-install-recommends ffmpeg tzdata ca-certificates \
+ && apt-get install -y --no-install-recommends ffmpeg tzdata ca-certificates fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/* \
  # pip is not needed at runtime; removing it shrinks the attack surface
  && rm -rf /usr/local/lib/python3*/site-packages/pip* /usr/local/bin/pip* \

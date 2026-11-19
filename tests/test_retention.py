@@ -17,7 +17,7 @@ def test_retention(settings):
     with session_scope() as s:
         s.add(Camera(id="CAM", snapshot_count=99))
     res = retention.run_retention(settings, today=date(2026, 11, 18))
-    assert res == {"snapshot_days_removed": 1, "archive_days_removed": 1}
+    assert res == {"snapshot_days_removed": 1, "archive_days_removed": 1, "road_temps_removed": 0}
     assert not (settings.snapshot_dir / "CAM" / "2026-08-01").exists()
     assert (settings.snapshot_dir / "CAM" / "2026-11-01").exists()
     assert (settings.archive_dir / "CAM" / "2026-08-01").exists()
