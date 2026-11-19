@@ -5,6 +5,10 @@ let cam = null;
 let activePeriod = "1d";
 let pollTimer = null;
 
+// Snapshot browser. `shot` is null while showing the live/latest image.
+const snaps = { days: [], day: null, frames: [], idx: -1 };
+let shot = null;
+
 const $ = (id) => document.getElementById(id);
 
 function renderClip() {
@@ -59,6 +63,93 @@ async function pollJob(id) {
   if (job.status === "done" || job.status === "failed") await load();
 }
 
+const snapUrl = (day, hms) =>
+  `api/cameras/${encodeURIComponent(camId)}/snapshots/${day}/${hms}.jpg`;
+const fmtHms = (hms) => `${hms.slice(0, 2)}:${hms.slice(2, 4)}:${hms.slice(4, 6)}`;
+
+function showLatest() {
+  shot = null;
+  $("latest").src = `api/cameras/${encodeURIComponent(camId)}/latest.jpg?t=${Date.now()}`;
+  $("latest").alt = "Senaste bild";
+  $("latestCaption").textContent = cam.last_photo_time ? `Senaste sparade bild: ${fmtTime(cam.last_photo_time)}` :
+    "Senaste bild från Trafikverket";
+  updateNav();
+}
+
+function showShot() {
+  const hms = snaps.frames[snaps.idx];
+  shot = { day: snaps.day, hms };
+  $("latest").src = snapUrl(snaps.day, hms);
+  $("latest").alt = `Bild ${snaps.day} ${fmtHms(hms)}`;
+  $("latestCaption").textContent =
+    `${snaps.day} ${fmtHms(hms)} · bild ${snaps.idx + 1} av ${snaps.frames.length} detta dygn`;
+  // Preload the neighbours so stepping feels instant
+  for (const i of [snaps.idx - 1, snaps.idx + 1]) {
+    if (i >= 0 && i < snaps.frames.length) new Image().src = snapUrl(snaps.day, snaps.frames[i]);
+  }
+  updateNav();
+}
+
+const dayPos = () => snaps.days.indexOf(snaps.day);
+const atNewest = () => !shot || (dayPos() === snaps.days.length - 1 && snaps.idx === snaps.frames.length - 1);
+const atOldest = () => !snaps.frames.length ||
+  (shot ? dayPos() <= 0 && snaps.idx <= 0 : snaps.days.length <= 1 && snaps.frames.length <= 1);
+
+function updateNav() {
+  const any = snaps.frames.length > 0;
+  $("prevImg").hidden = $("nextImg").hidden = !any;
+  $("prevImg").disabled = atOldest();
+  $("nextImg").disabled = atNewest();
+  $("toLatest").hidden = !shot;
+}
+
+async function loadDay(day) {
+  const q = day ? `?day=${encodeURIComponent(day)}` : "";
+  const r = await api(`api/cameras/${encodeURIComponent(camId)}/snapshots${q}`);
+  Object.assign(snaps, r, { idx: -1 });
+  return r.frames.length > 0;
+}
+
+let stepping = false;
+async function step(dir) {
+  if (stepping) return;
+  stepping = true;
+  try {
+    if (!shot) {
+      // Leaving the live view: refresh the list so the newest saved image is included
+      await loadDay(null);
+      if (!snaps.frames.length) return updateNav();
+      snaps.idx = snaps.frames.length - 1;
+      // The live view already shows the newest image, so "back" starts one step earlier
+      if (dir < 0 && snaps.idx > 0) snaps.idx--;
+      else if (dir < 0) return await stepDay(-1);
+      return showShot();
+    }
+    const i = snaps.idx + dir;
+    if (i >= 0 && i < snaps.frames.length) {
+      snaps.idx = i;
+      return showShot();
+    }
+    return await stepDay(dir);
+  } catch (e) {
+    $("latestCaption").textContent = `Kunde inte hämta bilder: ${e.message}`;
+  } finally {
+    stepping = false;
+  }
+}
+
+async function stepDay(dir) {
+  let p = dayPos() + dir;
+  while (p >= 0 && p < snaps.days.length) {
+    if (await loadDay(snaps.days[p])) {
+      snaps.idx = dir < 0 ? snaps.frames.length - 1 : 0;
+      return showShot();
+    }
+    p += dir;
+  }
+  updateNav();
+}
+
 function render() {
   document.title = `${cam.name} – TRV Webbkameror`;
   $("camName").textContent = cam.name;
@@ -66,9 +157,7 @@ function render() {
     `${cam.snapshot_count} sparade bilder`, `${cam.archive_days} dagar i årsarkivet`].filter(Boolean).join(" · ");
   $("enabled").checked = cam.enabled;
   $("enabledLabel").textContent = cam.enabled ? "Aktiv – sparar bilder" : "Inaktiv";
-  $("latest").src = `api/cameras/${encodeURIComponent(camId)}/latest.jpg?t=${Date.now()}`;
-  $("latestCaption").textContent = cam.last_photo_time ? `Senaste sparade bild: ${fmtTime(cam.last_photo_time)}` :
-    "Senaste bild från Trafikverket";
+  if (!shot) showLatest();
   renderTabs();
   renderClip();
   renderJob(cam.last_job);
@@ -78,6 +167,16 @@ async function load() {
   cam = await api(`api/cameras/${encodeURIComponent(camId)}`);
   render();
 }
+
+$("prevImg").addEventListener("click", () => step(-1));
+$("nextImg").addEventListener("click", () => step(1));
+$("toLatest").addEventListener("click", showLatest);
+document.addEventListener("keydown", (ev) => {
+  if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
+  if (ev.target.closest("input, textarea, select, video")) return;
+  if (ev.key === "ArrowLeft" && !$("prevImg").hidden && !$("prevImg").disabled) { ev.preventDefault(); step(-1); }
+  if (ev.key === "ArrowRight" && !$("nextImg").hidden && !$("nextImg").disabled) { ev.preventDefault(); step(1); }
+});
 
 $("tabs").addEventListener("click", (ev) => {
   const b = ev.target.closest("[data-period]");
@@ -110,6 +209,8 @@ $("generate").addEventListener("click", async () => {
   $("periodChecks").innerHTML = periods.map((p) =>
     `<label class="check"><input type="checkbox" value="${p.key}" checked> ${esc(p.label)}</label>`).join("");
   try { await load(); } catch (e) { $("camName").textContent = e.message; return; }
+  try { await loadDay(null); } catch (_) { /* browsing stays hidden */ }
+  updateNav();
   if (cam.lat != null) {
     const m = L.map("miniMap", { zoomControl: false, attributionControl: false }).setView([cam.lat, cam.lon], 11);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18 }).addTo(m);

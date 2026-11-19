@@ -28,9 +28,16 @@
     </div>
 
     <div class="cam-grid">
-      <figure class="card">
-        <img id="latest" alt="Senaste bild">
-        <figcaption class="muted" id="latestCaption"></figcaption>
+      <figure class="card viewer">
+        <div class="viewer-frame">
+          <img id="latest" alt="Senaste bild">
+          <button type="button" class="nav prev" id="prevImg" aria-label="Föregående bild" title="Föregående bild (←)" hidden>&#8249;</button>
+          <button type="button" class="nav next" id="nextImg" aria-label="Nästa bild" title="Nästa bild (→)" hidden>&#8250;</button>
+        </div>
+        <figcaption class="viewer-caption">
+          <span class="muted" id="latestCaption"></span>
+          <button type="button" class="btn small ghost" id="toLatest" hidden>Till senaste</button>
+        </figcaption>
       </figure>
       <div class="card">
         <h2>Generera timelapse</h2>
