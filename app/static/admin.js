@@ -180,7 +180,9 @@ async function renderOverview() {
           data-cam="${esc(j.camera_id)}">▶ Visa</button>` : ""}</span>
         <span class="muted">${fmtTime(j.range_start)} – ${fmtTime(j.range_end)} · ${esc(j.formats.join(", ").toUpperCase())}
           ${j.batch_id ? " · län/alla aktiva" : ""}</span>
-        ${j.status === "failed" && j.message ? `<span class="muted warn">${esc(j.message)}</span>` : ""}</span>
+        ${j.status === "failed" && j.message ? `<span class="muted warn">${esc(j.message)}</span>` : ""}
+        ${j.status === "done" && j.message.includes(" · tid ") ? `<span class="muted job-timing" title="${esc(j.message)}">${
+          esc(`tid ${j.message.split(" · tid ")[1]}`)}</span>` : ""}</span>
       <span class="muted job-time">${fmtTime(j.created_at)}</span></li>`;
   }).join("") : '<li class="muted">Inga genereringar ännu.</li>';
 }

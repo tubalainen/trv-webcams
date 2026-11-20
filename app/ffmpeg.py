@@ -325,5 +325,10 @@ async def run(cmd: list[str], timeout: float = 3600) -> None:
         proc.kill()
         await proc.wait()
         raise RuntimeError("ffmpeg timed out") from None
+    except asyncio.CancelledError:  # e.g. the other half of a clip failed: do not leave ffmpeg running
+        if proc.returncode is None:
+            proc.kill()
+            await proc.wait()
+        raise
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg failed ({proc.returncode}): {err.decode(errors='replace')[-800:]}")

@@ -118,8 +118,8 @@ FIELDS: list[Field] = [
         "Samtidiga jobb",
         "encoding",
         "int",
-        "Antal klipp som görs samtidigt. Det gör generering för många kameror snabbare, men belastar "
-        "CPU och disk mer.",
+        "Antal klipp som görs samtidigt. Fler gör generering för många kameror snabbare, men belastar "
+        "CPU och disk mer. Ett bra värde är ungefär hälften av antalet CPU-trådar.",
         1,
         16,
     ),
@@ -128,9 +128,10 @@ FIELDS: list[Field] = [
         "Samtidiga GPU-kodningar",
         "encoding",
         "int",
-        "Högst så många jobb kodar MP4 på GPU:n samtidigt, medan de andra förbereder bilder och GIF. "
-        "GeForce-kort tillåter ett begränsat antal samtidiga NVENC-kodningar (8 med nyare drivrutiner, "
-        "3–5 med äldre).",
+        "Högst så många MP4-kodningar samtidigt. Varje kodning avkodar och skalar också bilderna på "
+        "CPU:n, så ett för lågt värde lämnar CPU:n oanvänd. GeForce-kort tillåter ett begränsat antal "
+        "samtidiga NVENC-kodningar (8 med nyare drivrutiner, 3–5 med äldre). Blir det för många "
+        "kodas bara det klippet på CPU.",
         1,
         8,
     ),

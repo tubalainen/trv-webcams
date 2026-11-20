@@ -309,3 +309,47 @@ async def test_batch_clip_gets_the_batch_id(settings, monkeypatch):
     with session_scope() as s:
         clip = s.scalars(select(Clip).where(Clip.camera_id == "CAM_B")).one()
         assert clip.batch_id == batch_id
+
+
+def test_fmt_timings():
+    text = timelapse.fmt_timings(5.12, {"bilder": 0.21, "graf": 1.1, "MP4": 3.42, "GIF": 2.0})
+    assert text == " · tid 5,1 s (bilder 0,2 · graf 1,1 · MP4 3,4 · GIF 2,0)"
+
+
+@needs_ffmpeg
+async def test_failing_gif_cancels_the_mp4(settings, monkeypatch):
+    import asyncio
+
+    from app import ffmpeg
+
+    now = datetime.now(TZ).replace(microsecond=0)
+    with session_scope() as s:
+        s.add(Camera(id="CAM_1", enabled=True))
+    _make_frames(settings, "CAM_1", now, 30)
+    cancelled = []
+
+    async def fake_run(cmd, timeout=3600):
+        if "palettegen" in " ".join(cmd):
+            raise RuntimeError("ffmpeg failed (1): gif")
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            cancelled.append(True)
+            raise
+
+    monkeypatch.setattr(ffmpeg, "run", fake_run)
+    with pytest.raises(RuntimeError, match="gif"):  # a plain error, not an ExceptionGroup
+        await generate_clip(settings, Encoder(settings), "CAM_1", _req(settings, now))
+    assert cancelled == [True]
+    with session_scope() as s:
+        assert s.scalars(select(Clip)).first() is None
+
+
+@needs_ffmpeg
+async def test_clip_message_has_timings(settings):
+    now = datetime.now(TZ).replace(microsecond=0)
+    with session_scope() as s:
+        s.add(Camera(id="CAM_1", enabled=True))
+    _make_frames(settings, "CAM_1", now, 30)
+    res = await generate_clip(settings, Encoder(settings), "CAM_1", _req(settings, now))
+    assert " · tid " in res.message and "MP4 " in res.message and "GIF " in res.message

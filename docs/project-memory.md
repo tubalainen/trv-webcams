@@ -7,6 +7,7 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 | Version | Datum | Issue | PR | Ändring |
 |---------|-------|-------|----|---------|
+| 0.1.11 | 2026-11-20 | #30 | #31 | Snabbare bulkgenerering: MP4 och GIF parallellt i varje jobb, standard 8 jobb och 6 GPU-kodningar, tid per steg i jobbmeddelandet och loggen, ffmpeg dödas när en del avbryts |
 | 0.1.10 | 2026-11-20 | #29 | #28 | Avsnittet Klipp i admin: galleri med alla klipp (sök, körning, format), spelare med nedladdning och radering, länkar från översikten och efter en körning. `GET /api/clips` och `GET /api/batches`. Klipp från körningar får nu `batch_id` |
 | 0.1.10 | 2026-11-20 | #27 | #28 | Fler parallella genereringar: "Samtidiga jobb" upp till 16 (standard 4), ny gräns "Samtidiga GPU-kodningar" (standard 3), ett misslyckat GPU-försök kodar bara det klippet på CPU |
 | 0.1.10 | 2026-11-20 | #26 | #28 | Generera: "Hela Sverige" heter "Alla aktiva kameror", och urvalet visar antal aktiva per län (län utan aktiva är spärrade) |
@@ -41,6 +42,12 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 - **Parallellitet (beslut 2026-11-20, 0.1.10):**
   - **Jobb:** `max_concurrent_jobs` (1–16, standard 4) styr antalet jobb, och `max_gpu_encodes` (1–8, standard 3) styr bara själva MP4-kodningen på GPU:n (`Encoder.gpu_slot`, en `Slots`-begränsare som läser inställningen vid varje väntan). Bildurval, temperaturgraf per ruta och GIF körs på CPU i alla jobb samtidigt.
   - **Varför:** användaren såg bara cirka 10 % GPU vid bulkgenerering, så CPU-arbetet var flaskhalsen. GeForce-kort begränsar antalet samtidiga NVENC-sessioner.
+  - **0.1.11:** användaren såg fortfarande låg belastning (load average 2,7 av 16 trådar, 3 ffmpeg åt gången).
+    - **Orsak:** GPU-platsen omfattar hela MP4-kedjan, och mjpeg-avkodningen i ffmpeg är i praktiken enkeltrådad per jobb. Därför höjdes standardvärdena till 8 jobb och 6 GPU-kodningar.
+    - **Parallellt:** MP4 och GIF körs parallellt i en `asyncio.TaskGroup`. Fel i den ena avbryter den andra, och `ffmpeg.run` dödar processen vid `CancelledError`.
+    - **Mätt 2026-11-20** i sandlådan (libx264, ett dygn med 1 440 bilder i 1080p, 30 s): bilder 0,1 s, graf 1,2 s, GIF 3,3 s och MP4 13,7 s. Totalen gick från 17,0 till 14,9 s per klipp.
+    - **Processpool för grafen förkastades.** Grafen är en liten del av tiden. Arbetsprocesser med forkserver eller spawn importerar dessutom `app.main` (som kör `create_app()`) en gång till.
+    - **Nästa steg om MP4 fortfarande begränsar på GPU-servern:** avkodning med NVDEC (mjpeg) och `scale_cuda`. Det kan bara testas på riktig GPU.
   - **Fel på GPU:n:** misslyckas en GPU-kodning (`timelapse.encode_mp4`) görs bara det klippet om på CPU. Appen byter till CPU för gott (`Encoder.downgrade`) först när en ny provkodning också misslyckas. Tidigare räckte ett enda fel, vilket kunde flytta en hel bulkkörning till CPU.
 - **Ingen automatisk generering (beslut 2026-11-19, 0.1.6):**
   - Timelapses skapas bara när någon trycker på Generera. Den nattliga cron-tiden används nu bara för retention ("Daglig rensning").

@@ -219,3 +219,19 @@ def render_sequence(
             last_key = key
         paths.append(last_path)
     return paths
+
+
+def render_to_dir(
+    samples: list[tuple[datetime, float]],
+    start: datetime,
+    end: datetime,
+    width: int,
+    height: int,
+    tz: str,
+    frame_times: list[datetime],
+    out_dir: Path,
+    prefix: str,
+) -> list[Path]:
+    """Build the renderer and render the sequence."""
+    renderer = GraphRenderer(samples, start, end, width, height, tz)
+    return render_sequence(renderer, frame_times, out_dir, prefix)
