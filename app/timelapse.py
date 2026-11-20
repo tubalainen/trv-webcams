@@ -565,4 +565,8 @@ class JobQueue:
             if job is None:  # removed meanwhile ("start over")
                 return
             job.status, job.message, job.clip_id, job.finished_at = status, message, clip_id, utcnow()
+            if clip_id is not None and job.batch_id is not None:
+                clip = s.get(Clip, clip_id)
+                if clip is not None:
+                    clip.batch_id = job.batch_id  # so the clip library can filter on the run
         log.info("Job %s for %s: %s %s", job_id, camera_id, status, message)

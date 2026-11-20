@@ -87,12 +87,13 @@ Timelapses skapas bara när någon trycker på **Generera**. Det finns ingen aut
 
 ## Admin
 
-Admin-sidan (`⚙ Admin` i toppraden) har en sidomeny med fem avsnitt. På mobil blir menyn flikar. Adressen följer avsnittet (till exempel `admin.html#lagring`), så att länkar och bakåtknappen fungerar.
+Admin-sidan (`⚙ Admin` i toppraden) har en sidomeny med sex avsnitt. På mobil blir menyn flikar. Adressen följer avsnittet (till exempel `admin.html#lagring`), så att länkar och bakåtknappen fungerar.
 
 | Avsnitt | Innehåll |
 |---------|----------|
 | **Översikt** | Startsidan, som uppdateras varje minut. Visar aktiva kameror, lagring och disk (med en uppskattning vid full retention), videokodare/GPU, jobbkö, nästa schemalagda körningar och de senaste genereringarna. Varningar visas för saknad `TRV_API_KEY`, lite diskutrymme, en disk som inte räcker vid full retention, misslyckade genereringar och inga aktiva kameror. |
-| **Generera** | Klipp för alla aktiva kameror eller de aktiva i ett län (se ovan). |
+| **Generera** | Klipp för alla aktiva kameror eller de aktiva i ett län (se ovan). När en körning är klar leder "Visa klippen" till dess klipp. |
+| **Klipp** | Galleri med alla genererade klipp för alla kameror, nyast först. Sök på kamera och filtrera på körning eller format (MP4, GIF). Förhandsvisningen spelas när muspekaren är över. Ett klick öppnar en spelare med MP4 och GIF, nedladdning, bläddring med ‹ › eller piltangenterna, och radering av MP4, GIF eller hela klippet. "▶ Visa" i översiktens senaste genereringar öppnar samma spelare. |
 | **Lagring** | Lagring per kamera, kameravyn och "Ta bort allt som är äldre än" (se nedan). |
 | **Inställningar** | De globala inställningarna i fyra kort. |
 | **Underhåll** | Rensa allt och börja om. |

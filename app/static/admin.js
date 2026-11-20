@@ -6,7 +6,7 @@ const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 /* ---- Navigation (hash routing) ---- */
 const VIEWS = {
-  oversikt: "Översikt", generera: "Generera", lagring: "Lagring",
+  oversikt: "Översikt", generera: "Generera", klipp: "Klipp", lagring: "Lagring",
   installningar: "Inställningar", underhall: "Underhåll",
 };
 let currentView = null;
@@ -28,6 +28,12 @@ function showView(name) {
   window.scrollTo(0, 0);
   if (name === "oversikt") renderOverview();
   if (name === "generera") setupBatch();
+  if (name === "klipp") {
+    loadClipBatches().then(() => {
+      if (pendingBatch) { $("clipBatch").value = pendingBatch; pendingBatch = null; }
+      loadClips(true);
+    });
+  }
   if (name === "lagring" && (!storageData || Date.now() - storageAt > 60000)) loadStorage();
 }
 
@@ -169,7 +175,9 @@ async function renderOverview() {
     const [label, cls] = JOB_STATUS[j.status] || [j.status, ""];
     return `<li>
       <span class="badge ${cls}">${label}</span>
-      <span class="job-main"><a href="camera.html?id=${encodeURIComponent(j.camera_id)}">${esc(camName(j.camera_id))}</a>
+      <span class="job-main"><span class="job-name"><a href="camera.html?id=${encodeURIComponent(j.camera_id)}">${esc(camName(j.camera_id))}</a>
+        ${j.status === "done" && j.clip_id ? `<button type="button" class="btn small ghost" data-open-clip="${j.clip_id}"
+          data-cam="${esc(j.camera_id)}">▶ Visa</button>` : ""}</span>
         <span class="muted">${fmtTime(j.range_start)} – ${fmtTime(j.range_end)} · ${esc(j.formats.join(", ").toUpperCase())}
           ${j.batch_id ? " · län/alla aktiva" : ""}</span>
         ${j.status === "failed" && j.message ? `<span class="muted warn">${esc(j.message)}</span>` : ""}</span>
@@ -205,6 +213,8 @@ async function pollBatch(id) {
     $("batchProgress").textContent = `${b.county}: ${done} av ${b.total} klara` +
       (s.failed ? `, ${s.failed} misslyckades` : "") + (s.skipped ? `, ${s.skipped} hoppades över` : "") +
       (b.finished ? " ✓" : " …");
+    $("batchShowClips").hidden = !b.finished || !s.done;
+    $("batchShowClips").dataset.batch = id;
     if (!b.finished) batchTimer = setTimeout(() => pollBatch(id), 3000);
     else toast(`Generering klar för ${b.county}: ${b.total - s.failed} av ${b.total} klipp.`,
       s.failed ? "error" : "ok");
@@ -253,6 +263,196 @@ async function setupBatch() {
   });
   $("batchScope").addEventListener("change", () => batchGen.reloadAvailability());
 }
+
+/* ---- Klipp: gallery of generated clips and a player ---- */
+const CLIPS_PAGE = 48;
+const clips = { items: [], total: 0, bytes: 0, seq: 0 };
+const player = { list: [], index: 0, kind: "mp4" };
+let pendingBatch = null; // set by "Visa klippen" after a batch, applied when the view opens
+
+const clipKind = () => document.querySelector('input[name="clipKind"]:checked').value;
+const sameDay = (a, b) => a && b && a.slice(0, 10) === b.slice(0, 10);
+function fmtRange(a, b) {
+  const t = (iso) => new Date(iso).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+  return sameDay(a, b) ? `${fmtTime(a)}–${t(b)}` : `${fmtTime(a)} – ${fmtTime(b)}`;
+}
+
+async function loadClipBatches() {
+  try {
+    const batches = await api("api/batches?limit=30");
+    const sel = $("clipBatch");
+    const cur = sel.value;
+    sel.innerHTML = `<option value="">Alla klipp</option>` + batches.map((b) =>
+      `<option value="${b.id}">${fmtTime(b.created_at)} · ${esc(b.county)} · ${plural(b.clips, "klipp", "klipp")}</option>`).join("");
+    sel.value = [...sel.options].some((o) => o.value === cur) ? cur : "";
+  } catch (_) { /* the filter is optional */ }
+}
+
+async function loadClips(reset) {
+  const seq = ++clips.seq; // ignore answers to older searches
+  const params = new URLSearchParams({ limit: CLIPS_PAGE, offset: reset ? 0 : clips.items.length });
+  if ($("clipSearch").value.trim()) params.set("q", $("clipSearch").value.trim());
+  if ($("clipBatch").value) params.set("batch_id", $("clipBatch").value);
+  if (clipKind()) params.set("kind", clipKind());
+  let r;
+  try { r = await api(`api/clips?${params}`); } catch (e) { toast(`Kunde inte läsa klippen: ${e.message}`, "error"); return; }
+  if (seq !== clips.seq) return;
+  if (reset) { clips.items = []; $("clipGrid").innerHTML = ""; }
+  clips.total = r.total;
+  clips.bytes = r.bytes;
+  const start = clips.items.length;
+  clips.items.push(...r.clips);
+  $("clipGrid").insertAdjacentHTML("beforeend", r.clips.map((c, i) => clipCard(c, start + i)).join(""));
+  $("clipGrid").querySelectorAll("video[data-src]").forEach((v) => thumbObserver.observe(v));
+  $("clipCount").textContent = clips.total
+    ? `${plural(clips.total, "klipp", "klipp")} · ${fmtBytes(clips.bytes)}` +
+      (clips.items.length < clips.total ? ` · visar ${clips.items.length}` : "")
+    : "";
+  if (!clips.total) {
+    $("clipGrid").innerHTML = `<p class="muted empty">${$("clipSearch").value || $("clipBatch").value || clipKind()
+      ? "Inga klipp matchar filtret." : 'Inga klipp ännu. Skapa klipp under <a href="#generera">Generera</a> eller på en kamerasida.'}</p>`;
+  }
+  $("clipMore").hidden = clips.items.length >= clips.total;
+  $("clipMore").textContent = `Visa fler (${clips.total - clips.items.length} kvar)`;
+}
+
+function clipCard(c, i) {
+  const thumb = c.mp4
+    ? `<video data-src="${c.mp4.url}#t=0.5" preload="none" muted playsinline loop></video>`
+    : `<img src="${c.gif.url}" alt="" loading="lazy">`;
+  const badges = [c.mp4 && `MP4 ${fmtBytes(c.mp4.bytes)}`, c.gif && `GIF ${fmtBytes(c.gif.bytes)}`].filter(Boolean);
+  return `<button type="button" class="clip-card" data-i="${i}" aria-label="Spela ${esc(c.camera_name)}, ${fmtRange(c.range_start, c.range_end)}">
+    <span class="clip-thumb">${thumb}${c.duration_s ? `<span class="clip-dur">${c.duration_s} s</span>` : ""}<span class="clip-play" aria-hidden="true">▶</span></span>
+    <span class="clip-info">
+      <span class="clip-name">${esc(c.camera_name)}</span>
+      <span class="muted">${fmtRange(c.range_start, c.range_end)}</span>
+      <span class="clip-badges">${badges.map((b) => `<span class="badge">${b}</span>`).join("")}
+        ${c.batch_id ? '<span class="badge info">körning</span>' : ""}</span>
+    </span></button>`;
+}
+
+// Load video thumbnails only when they scroll into view
+const thumbObserver = new IntersectionObserver((entries) => {
+  for (const e of entries) {
+    if (!e.isIntersecting) continue;
+    e.target.src = e.target.dataset.src;
+    e.target.preload = "metadata";
+    e.target.removeAttribute("data-src");
+    thumbObserver.unobserve(e.target);
+  }
+}, { rootMargin: "200px" });
+
+let clipSearchTimer;
+$("clipSearch").addEventListener("input", () => { clearTimeout(clipSearchTimer); clipSearchTimer = setTimeout(() => loadClips(true), 250); });
+$("clipBatch").addEventListener("change", () => loadClips(true));
+document.querySelectorAll('input[name="clipKind"]').forEach((r) => r.addEventListener("change", () => loadClips(true)));
+$("clipMore").addEventListener("click", () => loadClips(false));
+$("clipGrid").addEventListener("click", (ev) => {
+  const card = ev.target.closest("[data-i]");
+  if (card) openPlayer(clips.items, Number(card.dataset.i));
+});
+// Preview on hover
+$("clipGrid").addEventListener("mouseover", (ev) => {
+  const v = ev.target.closest(".clip-card")?.querySelector("video:not([data-src])");
+  if (v && v.paused) v.play().catch(() => {});
+});
+$("clipGrid").addEventListener("mouseout", (ev) => {
+  const card = ev.target.closest(".clip-card");
+  if (!card || card.contains(ev.relatedTarget)) return;
+  const v = card.querySelector("video");
+  if (v && !v.paused) { v.pause(); v.currentTime = 0.5; }
+});
+
+$("batchShowClips").addEventListener("click", () => {
+  pendingBatch = $("batchShowClips").dataset.batch;
+  location.hash = "klipp";
+});
+
+function openPlayer(list, index) {
+  player.list = list;
+  player.index = index;
+  const c = list[index];
+  player.kind = c.mp4 ? "mp4" : "gif";
+  renderPlayer();
+  if (!$("clipPlayer").open) $("clipPlayer").showModal();
+}
+
+function renderPlayer() {
+  const c = player.list[player.index];
+  if (!c.mp4 && player.kind === "mp4") player.kind = "gif";
+  if (!c.gif && player.kind === "gif") player.kind = "mp4";
+  $("cpTitle").innerHTML = `<a href="camera.html?id=${encodeURIComponent(c.camera_id)}">${esc(c.camera_name || camName(c.camera_id))}</a>`;
+  $("cpMeta").textContent = `${fmtRange(c.range_start, c.range_end)}${c.duration_s ? ` · ${c.duration_s} s` : ""} · ${c.frames} bilder` +
+    (c.encoder && c.encoder !== "gif" ? ` · ${c.encoder}` : "") + ` · skapad ${fmtTime(c.created_at)}`;
+  $("cpTabs").hidden = !(c.mp4 && c.gif);
+  document.querySelectorAll('input[name="cpKind"]').forEach((r) => { r.checked = r.value === player.kind; });
+  const m = c[player.kind];
+  $("cpMedia").innerHTML = player.kind === "mp4"
+    ? `<video src="${m.url}" controls autoplay muted loop playsinline></video>`
+    : `<img src="${m.url}" alt="GIF för ${esc(c.camera_name || "")}">`;
+  const dl = (k) => c[k] ? `<a class="btn small ghost" href="${c[k].url}" download="${esc(c.camera_id)}-${c.id}.${k}">⬇ ${k.toUpperCase()} (${fmtBytes(c[k].bytes)})</a>` : "";
+  $("cpActions").innerHTML = `<span class="cp-dl">${dl("mp4")}${dl("gif")}</span>
+    <span class="cp-del">${c.mp4 && c.gif ? `<button type="button" class="btn small danger ghost" data-del="mp4">Ta bort MP4</button>
+      <button type="button" class="btn small danger ghost" data-del="gif">Ta bort GIF</button>` : ""}
+      <button type="button" class="btn small danger" data-del="all">Ta bort klippet</button></span>`;
+  $("cpPrev").disabled = player.index === 0;
+  $("cpNext").disabled = player.index >= player.list.length - 1;
+  $("cpPrev").hidden = $("cpNext").hidden = player.list.length < 2;
+}
+
+$("cpTabs").addEventListener("change", (ev) => { player.kind = ev.target.value; renderPlayer(); });
+$("cpPrev").addEventListener("click", () => { if (player.index > 0) { player.index--; renderPlayer(); } });
+$("cpNext").addEventListener("click", () => {
+  if (player.index < player.list.length - 1) { player.index++; renderPlayer(); }
+});
+$("clipPlayer").addEventListener("keydown", (ev) => {
+  if (ev.key === "ArrowLeft") $("cpPrev").click();
+  if (ev.key === "ArrowRight") $("cpNext").click();
+});
+$("clipPlayer").addEventListener("close", () => { $("cpMedia").innerHTML = ""; });
+
+$("cpActions").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-del]");
+  if (!b) return;
+  const c = player.list[player.index];
+  const kind = b.dataset.del;
+  const what = kind === "all" ? "hela klippet" : `klippets ${kind.toUpperCase()}`;
+  const ok = await confirmDialog({
+    title: `Ta bort ${what}?`, danger: true, confirmText: "Ta bort",
+    body: `${c.camera_name || camName(c.camera_id)}, ${fmtRange(c.range_start, c.range_end)}.\n\nKlippet kan genereras igen.`,
+  });
+  if (!ok) return;
+  try {
+    const r = await api(`api/cameras/${encodeURIComponent(c.camera_id)}/clips/${c.id}?kind=${kind}`, { method: "DELETE" });
+    toast(`Borttaget: ${fmtBytes(r.bytes)} frigjort.`, "ok");
+    if (kind === "all") {
+      player.list.splice(player.index, 1);
+      if (!player.list.length) $("clipPlayer").close();
+      else { player.index = Math.min(player.index, player.list.length - 1); renderPlayer(); }
+    } else {
+      c[kind] = null;
+      renderPlayer();
+    }
+    storageData = null;
+    loadStatus();
+    if (currentView === "klipp") loadClips(true);
+  } catch (e) {
+    toast(`Kunde inte ta bort: ${e.message}`, "error");
+  }
+});
+
+// "▶ Visa" in the overview's recent generations
+$("ovJobs").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-open-clip]");
+  if (!b) return;
+  try {
+    const list = await api(`api/cameras/${encodeURIComponent(b.dataset.cam)}/clips`);
+    const i = list.findIndex((c) => c.id === Number(b.dataset.openClip));
+    if (i < 0) { toast("Klippet finns inte längre.", "info"); return; }
+    list.forEach((c) => { c.camera_name = camName(c.camera_id); });
+    openPlayer(list, i);
+  } catch (e) { toast(`Kunde inte öppna klippet: ${e.message}`, "error"); }
+});
 
 /* ---- Lagring ---- */
 let storageData = null;

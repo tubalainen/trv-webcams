@@ -7,6 +7,7 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 | Version | Datum | Issue | PR | Ändring |
 |---------|-------|-------|----|---------|
+| 0.1.10 | 2026-11-20 | #29 | #28 | Avsnittet Klipp i admin: galleri med alla klipp (sök, körning, format), spelare med nedladdning och radering, länkar från översikten och efter en körning. `GET /api/clips` och `GET /api/batches`. Klipp från körningar får nu `batch_id` |
 | 0.1.10 | 2026-11-20 | #27 | #28 | Fler parallella genereringar: "Samtidiga jobb" upp till 16 (standard 4), ny gräns "Samtidiga GPU-kodningar" (standard 3), ett misslyckat GPU-försök kodar bara det klippet på CPU |
 | 0.1.10 | 2026-11-20 | #26 | #28 | Generera: "Hela Sverige" heter "Alla aktiva kameror", och urvalet visar antal aktiva per län (län utan aktiva är spärrade) |
 | 0.1.9 | 2026-11-20 | #24 | #25 | Ny layout för admin: sidomeny (flikar på mobil) med Översikt, Generera, Lagring, Inställningar och Underhåll, översikt med varningar, inställningar i fyra kort med spara-list, egna dialoger och notiser |
@@ -87,6 +88,11 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
   - **Kontroller:** av/på med "På"/"Av" visas som switch, 2–3 val som segmentknappar och fler val som select.
   - **Spara-list:** visas vid ändringar. Byte av avsnitt med osparade ändringar ger en dialog (Stanna kvar, Släng eller Spara), och `beforeunload` varnar. "Återställ" sparar direkt men behåller andra osparade ändringar.
   - **Dialoger och notiser:** `appDialog`, `confirmDialog` och `toast` finns i `common.js`. Admin använder inte längre `window.confirm`, men övriga sidor gör det fortfarande.
+- **Klipp i admin (0.1.10):** `GET /api/clips` (q, batch_id, kind, limit, offset, nyast först) och
+  `GET /api/batches` (med antal klipp) är öppna, precis som klippen på kamerasidan. Radering i spelaren
+  använder det öppna `DELETE /api/cameras/{id}/clips/{clip_id}?kind=`. Videominiatyrer laddas först när de
+  syns (IntersectionObserver, `#t=0.5`). Före 0.1.10 fick klipp från körningar inget `batch_id`, bara
+  jobbet. Det fylls i vid start från `jobs.clip_id` (`db._migrate_data`), och `run_job` sätter det nu.
 - **Radering, var (beslut 2026-11-19, 0.1.8):** bilder (snapshots och arkiv) tas bara bort i admin,
   i tabellen och kameravyn under "Lagring". På kamerasidan kan **alla** ta bort klipp
   (MP4, GIF eller båda) med `DELETE /api/cameras/{id}/clips/{clip_id}?kind=`, eftersom de går att

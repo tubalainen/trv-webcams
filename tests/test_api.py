@@ -159,3 +159,32 @@ def test_ui_files_are_revalidated(settings):
         assert c.get("/generate.js").headers["cache-control"] == "no-cache"
         assert c.get("/").headers["cache-control"] == "no-cache"
         assert "no-cache" not in c.get("/vendor/leaflet/leaflet.js").headers.get("cache-control", "")
+
+
+def test_clip_library_lists_all_cameras(settings):
+    from app.db import Batch, Clip
+
+    now = datetime(2026, 11, 19, 8)
+    with _client(settings) as c:
+        with session_scope() as s:
+            b = Batch(scope="all", range_start=now, range_end=now, formats="mp4,gif", duration_s=10,
+                      total=2, created_at=now)  # fmt: skip
+            s.add(b)
+            s.flush()
+            s.add(Clip(camera_id="CAM_1", batch_id=b.id, range_start=now, range_end=now, created_at=now,
+                       mp4_path="1.mp4", mp4_bytes=100))  # fmt: skip
+            s.add(Clip(camera_id="CAM_2", batch_id=b.id, range_start=now, range_end=now, created_at=now,
+                       gif_path="2.gif", gif_bytes=50))  # fmt: skip
+            s.add(Clip(camera_id="CAM_1", range_start=now, range_end=now, created_at=now,
+                       mp4_path="3.mp4", mp4_bytes=7))  # fmt: skip
+            bid = b.id
+        r = c.get("/api/clips").json()
+        assert r["total"] == 3 and r["bytes"] == 157 and r["clips"][0]["camera_name"]
+        assert [x["camera_id"] for x in r["clips"]] == ["CAM_1", "CAM_2", "CAM_1"]  # newest first
+        assert c.get("/api/clips", params={"batch_id": bid}).json()["total"] == 2
+        assert c.get("/api/clips", params={"kind": "gif"}).json()["total"] == 1
+        page = c.get("/api/clips", params={"limit": 1, "offset": 1}).json()
+        assert page["clips"][0]["camera_id"] == "CAM_2"
+        assert c.get("/api/clips", params={"q": "kir"}).json()["total"] == 1  # CAM_2 is "Kiruna"
+        batches = c.get("/api/batches").json()
+        assert batches[0]["id"] == bid and batches[0]["clips"] == 2

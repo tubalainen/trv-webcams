@@ -282,3 +282,30 @@ async def test_gpu_failure_falls_back_for_this_clip_only(settings, monkeypatch):
     monkeypatch.setattr(ffmpeg, "encoder_works", lambda mode, dev: False)
     await timelapse.encode_mp4(settings, enc, enc.choice, lambda e: [e.codec])
     assert enc.choice.mode == "cpu"
+
+
+async def test_batch_clip_gets_the_batch_id(settings, monkeypatch):
+    now = datetime(2026, 11, 19, 12, tzinfo=TZ)
+    with session_scope() as s:
+        s.add(Camera(id="CAM_B", name="B", enabled=True))
+        b = Batch(scope="all", range_start=now, range_end=now, formats="mp4", duration_s=10, created_at=now)
+        s.add(b)
+        s.flush()
+        job = Job(camera_id="CAM_B", batch_id=b.id, trigger="batch", status="queued", formats="mp4",
+                  range_start=now, range_end=now, duration_s=10, created_at=now)  # fmt: skip
+        s.add(job)
+        s.flush()
+        job_id, batch_id = job.id, b.id
+
+    async def fake_generate(settings, encoder, camera_id, req):
+        with session_scope() as s:
+            clip = Clip(camera_id=camera_id, range_start=now, range_end=now, created_at=now)
+            s.add(clip)
+            s.flush()
+            return timelapse.ClipResult(clip.id, "ok")
+
+    monkeypatch.setattr(timelapse, "generate_clip", fake_generate)
+    await JobQueue(settings).run_job(job_id)
+    with session_scope() as s:
+        clip = s.scalars(select(Clip).where(Clip.camera_id == "CAM_B")).one()
+        assert clip.batch_id == batch_id
