@@ -91,7 +91,7 @@ Admin-sidan (`⚙ Admin` i toppraden) har en sidomeny med sex avsnitt. På mobil
 
 | Avsnitt | Innehåll |
 |---------|----------|
-| **Översikt** | Startsidan, som uppdateras varje minut. Visar aktiva kameror, lagring och disk (med en uppskattning vid full retention), videokodare/GPU, jobbkö, nästa schemalagda körningar och de senaste genereringarna. Varningar visas för saknad `TRV_API_KEY`, lite diskutrymme, en disk som inte räcker vid full retention, misslyckade genereringar och inga aktiva kameror. |
+| **Översikt** | Startsidan, som uppdateras varje minut. Visar aktiva kameror, lagring och disk (med en uppskattning vid full retention), videokodare/GPU, jobbkö, nästa schemalagda körningar och de senaste genereringarna, med tid per steg (bilder, graf, MP4, GIF). Varningar visas för saknad `TRV_API_KEY`, lite diskutrymme, en disk som inte räcker vid full retention, misslyckade genereringar och inga aktiva kameror. |
 | **Generera** | Klipp för alla aktiva kameror eller de aktiva i ett län (se ovan). När en körning är klar leder "Visa klippen" till dess klipp. |
 | **Klipp** | Galleri med alla genererade klipp för alla kameror, nyast först. Sök på kamera och filtrera på körning eller format (MP4, GIF). Förhandsvisningen spelas när muspekaren är över. Ett klick öppnar en spelare med MP4 och GIF, nedladdning, bläddring med ‹ › eller piltangenterna, och radering av MP4, GIF eller hela klippet. "▶ Visa" i översiktens senaste genereringar öppnar samma spelare. |
 | **Lagring** | Lagring per kamera, kameravyn och "Ta bort allt som är äldre än" (se nedan). |
@@ -178,8 +178,8 @@ Alla inställningar finns i [`.env.example`](.env.example). Allt utom hemlighete
 | `ARCHIVE_RETENTION_DAYS` | `365` | Hur länge timarkivet sparas |
 | `NIGHTLY_HOUR` / `NIGHTLY_MINUTE` | `2` / `0` | När den dagliga rensningen (retention) körs |
 | `HWACCEL` | `auto` | `auto`, `nvidia`, `vaapi`, `qsv` eller `cpu` |
-| `MAX_CONCURRENT_JOBS` | `4` | Antal klipp som görs samtidigt (1–16). Fler gör generering för många kameror snabbare |
-| `MAX_GPU_ENCODES` | `3` | Högst så många MP4-kodningar på GPU:n samtidigt (1–8). GeForce-kort begränsar antalet NVENC-kodningar |
+| `MAX_CONCURRENT_JOBS` | `8` | Antal klipp som görs samtidigt (1–16). Fler gör generering för många kameror snabbare |
+| `MAX_GPU_ENCODES` | `6` | Högst så många MP4-kodningar på GPU:n samtidigt (1–8). GeForce-kort begränsar antalet NVENC-kodningar |
 | `TEMP_STATION_MAX_KM` | `20` | Största avstånd till en vägväderstation för temperaturgrafen |
 | `TEMP_COLLECT_INTERVAL_MINUTES` | `15` | Hur ofta vägtemperatur hämtas |
 | `DEFAULT_ENABLED_CAMERAS` | – | Kamera-id:n som aktiveras vid första start |

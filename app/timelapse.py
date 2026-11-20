@@ -11,6 +11,7 @@ import asyncio
 import logging
 import os
 import tempfile
+import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -293,12 +294,32 @@ def _render_overlay(
 ) -> tuple[Path, int]:
     """Render the graph for each frame and write an ffconcat list. Returns (list, margin)."""
     info = overlay.overlay_size(width, fraction)
-    renderer = overlay.GraphRenderer(graph.samples, start, end, info.width, info.height, settings.timezone)
     times = [storage.frame_time(f, settings.timezone) or end for f in frames]
-    pngs = overlay.render_sequence(renderer, times, out_dir, prefix)
+    pngs = overlay.render_to_dir(
+        graph.samples, start, end, info.width, info.height, settings.timezone, times, out_dir, prefix
+    )
     concat = out_dir / f"{prefix}overlay.ffconcat"
     ffmpeg.write_concat_file(pngs, fps, concat)
     return concat, info.margin
+
+
+async def render_overlay(
+    settings: Settings,
+    graph: TempGraph,
+    frames: list[Path],
+    start: datetime,
+    end: datetime,
+    width: int,
+    fraction: float,
+    fps: int,
+    out_dir: Path,
+    prefix: str,
+) -> tuple[Path, int]:
+    """_render_overlay in a thread. Drawing takes about a second per clip (measured 2026-11-20 with a
+    day of 1080p images), so a process pool is not worth it: the MP4 chain dominates."""
+    return await asyncio.to_thread(
+        _render_overlay, settings, graph, frames, start, end, width, fraction, fps, out_dir, prefix
+    )
 
 
 class Skipped(Exception):  # noqa: N818 - not an error: the job is marked "skipped"
@@ -317,6 +338,8 @@ def _temp_choice(value: str) -> bool | None:
 
 async def generate_clip(settings: Settings, encoder: Encoder, camera_id: str, req: ClipRequest) -> ClipResult:
     """Generate the requested formats for one camera and store them as a library clip."""
+    t0 = time.monotonic()
+    timings: dict[str, float] = {}  # seconds per step, shown in the job message
     start, end = req.start, req.end
     frames = await asyncio.to_thread(select_frames, settings, camera_id, start, end)
     if len(frames) < MIN_FRAMES:
@@ -335,20 +358,23 @@ async def generate_clip(settings: Settings, encoder: Encoder, camera_id: str, re
 
     cam_dir = settings.timelapse_dir / storage.safe_id(camera_id)
     cam_dir.mkdir(parents=True, exist_ok=True)
+    timings["bilder"] = time.monotonic() - t0
     enc = encoder.choice
     with tempfile.TemporaryDirectory(dir=cam_dir) as tmp:
         tmpd = Path(tmp)
         mp4_tmp, gif_tmp = tmpd / "out.mp4", tmpd / "out.gif"
 
-        if want_mp4:
+        async def make_mp4() -> ffmpeg.EncoderChoice:
             mp4_list = tmpd / "mp4.ffconcat"
             ffmpeg.write_concat_file(mp4_frames, settings.output_fps, mp4_list)
             mp4_ov, mp4_margin = None, 12
             if graph is not None:
-                mp4_ov, mp4_margin = await asyncio.to_thread(
-                    _render_overlay, settings, graph, mp4_frames, start, end, size[0],
+                t = time.monotonic()
+                mp4_ov, mp4_margin = await render_overlay(
+                    settings, graph, mp4_frames, start, end, size[0],
                     MP4_GRAPH_FRACTION, settings.output_fps, tmpd, "mp4_",
                 )  # fmt: skip
+                timings["graf"] = timings.get("graf", 0.0) + time.monotonic() - t
 
             def mp4_cmd(e: ffmpeg.EncoderChoice) -> list[str]:
                 return ffmpeg.mp4_command(
@@ -356,17 +382,23 @@ async def generate_clip(settings: Settings, encoder: Encoder, camera_id: str, re
                     overlay=mp4_ov, overlay_margin=mp4_margin,
                 )  # fmt: skip
 
-            enc = await encode_mp4(settings, encoder, enc, mp4_cmd)
+            t = time.monotonic()
+            used = await encode_mp4(settings, encoder, enc, mp4_cmd)
+            timings["MP4"] = time.monotonic() - t
+            return used
 
-        if want_gif:
+        async def make_gif() -> None:
             gif_list = tmpd / "gif.ffconcat"
             ffmpeg.write_concat_file(gif_frames, settings.gif_fps, gif_list)
             gif_ov, gif_margin = None, 6
             if graph is not None:
-                gif_ov, gif_margin = await asyncio.to_thread(
-                    _render_overlay, settings, graph, gif_frames, start, end, settings.gif_width,
+                t = time.monotonic()
+                gif_ov, gif_margin = await render_overlay(
+                    settings, graph, gif_frames, start, end, settings.gif_width,
                     GIF_GRAPH_FRACTION, settings.gif_fps, tmpd, "gif_",
                 )  # fmt: skip
+                timings["graf"] = timings.get("graf", 0.0) + time.monotonic() - t
+            t = time.monotonic()
             await ffmpeg.run(
                 ffmpeg.gif_command(
                     gif_list,
@@ -377,6 +409,19 @@ async def generate_clip(settings: Settings, encoder: Encoder, camera_id: str, re
                     overlay_margin=gif_margin,
                 )  # fmt: skip
             )
+            timings["GIF"] = time.monotonic() - t
+
+        # MP4 (waits for a GPU slot) and GIF (always on the CPU) run at the same time. When one
+        # fails the other is cancelled, before the temporary directory goes away.
+        try:
+            async with asyncio.TaskGroup() as tg:
+                mp4_task = tg.create_task(make_mp4()) if want_mp4 else None
+                if want_gif:
+                    tg.create_task(make_gif())
+        except ExceptionGroup as eg:
+            raise eg.exceptions[0] from None
+        if mp4_task is not None:
+            enc = mp4_task.result()
 
         with session_scope() as s:
             clip = Clip(
@@ -399,7 +444,19 @@ async def generate_clip(settings: Settings, encoder: Encoder, camera_id: str, re
                 clip.gif_path = str(storage.clip_path(settings, camera_id, clip.id, "gif"))
                 os.replace(gif_tmp, clip.gif_path)
                 clip.gif_bytes = os.path.getsize(clip.gif_path)
-            return ClipResult(clip.id, describe(clip, graph_note))
+            total = time.monotonic() - t0
+            log.info(
+                "Clip %s for %s done in %.1f s (%s)", clip.id, camera_id, total,
+                ", ".join(f"{k} {v:.1f} s" for k, v in timings.items()),
+            )  # fmt: skip
+            return ClipResult(clip.id, describe(clip, graph_note) + fmt_timings(total, timings))
+
+
+def fmt_timings(total: float, timings: dict[str, float]) -> str:
+    """ " · tid 5,1 s (bilder 0,2 · graf 1,1 · MP4 3,4 · GIF 2,0)". MP4 and GIF run in parallel."""
+    sv = lambda v: f"{v:.1f}".replace(".", ",")  # noqa: E731
+    steps = " · ".join(f"{k} {sv(v)}" for k, v in timings.items())
+    return f" · tid {sv(total)} s ({steps})"
 
 
 def describe(clip: Clip, note: str = "") -> str:
