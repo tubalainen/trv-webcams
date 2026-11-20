@@ -195,6 +195,47 @@ a { color: var(--accent); }
 .bar i { display: block; height: 100%; width: 0; background: var(--on); transition: width .3s; }
 .progress-wrap p { margin: 6px 0 0; }
 
+/* Clips gallery and player */
+.clip-tools { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.admin-main .clip-tools { padding: 12px 14px; }
+.clip-tools input[type=search] { flex: 1 1 220px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--text); font: inherit; }
+.clip-tools select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+  color: var(--text); font: inherit; max-width: 100%; }
+.clip-tools .field.inline { min-width: 0; flex: 1 1 260px; }
+.clip-tools .field.inline select { flex: 1; min-width: 0; }
+.clip-count { margin: 0; }
+.clip-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.clip-gallery .empty { grid-column: 1 / -1; }
+.clip-card { display: flex; flex-direction: column; padding: 0; border: 1px solid var(--border); border-radius: 10px;
+  overflow: hidden; background: var(--panel); color: var(--text); font: inherit; text-align: left; cursor: pointer;
+  transition: border-color .15s, transform .15s; }
+.clip-card:hover { border-color: var(--accent); }
+.clip-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.clip-thumb { position: relative; display: block; aspect-ratio: 16 / 9; background: #000; }
+.clip-thumb video, .clip-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.clip-dur { position: absolute; right: 6px; bottom: 6px; padding: 0 6px; border-radius: 4px; font-size: .78em;
+  background: rgb(0 0 0 / .65); color: #fff; }
+.clip-play { position: absolute; inset: 0; display: grid; place-items: center; font-size: 28px; color: #fff;
+  text-shadow: 0 1px 6px rgb(0 0 0 / .6); opacity: .85; transition: opacity .15s; }
+.clip-card:hover .clip-play { opacity: 0; }
+.clip-info { display: grid; gap: 2px; padding: 8px 10px 10px; min-width: 0; }
+.clip-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clip-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.clip-player { max-width: 1100px; }
+.cp-head { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.cp-title { flex: 1; min-width: 0; text-align: center; }
+.cp-title h2 { margin: 0; font-size: 1.1em; }
+.cp-title p { margin: 2px 0 0; }
+.clip-player .cp-tabs { margin: 0 auto 10px; display: flex; width: max-content; }
+.cp-media { display: grid; place-items: center; background: #000; border-radius: 8px; overflow: hidden; }
+.cp-media video, .cp-media img { width: 100%; max-height: 70vh; object-fit: contain; display: block; }
+.cp-actions { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; margin-top: 12px; }
+.cp-dl, .cp-del { display: flex; flex-wrap: wrap; gap: 6px; }
+.job-name { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.job-name .btn { padding: 1px 8px; flex: none; }
+#batchShowClips { margin-top: 8px; }
+
 /* Storage */
 .storage-tools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: end; margin: 0 0 10px; }
 .storage-tools input[type=search] { flex: 1 1 200px; padding: 7px 9px; border: 1px solid var(--border);
@@ -295,6 +336,9 @@ a { color: var(--accent); }
   .job-time { grid-column: 2; }
   .seg { flex-wrap: wrap; }
   .toasts { bottom: 84px; }
+  .clip-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .clip-info { padding: 6px 8px 8px; font-size: .92em; }
+  .cp-actions { justify-content: flex-start; }
 }
 
 /* Generate dialog and calendar */

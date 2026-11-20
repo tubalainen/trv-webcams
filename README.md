@@ -4,7 +4,7 @@ Webbapplikation som sparar bilder från Trafikverkets webbkameror och skapar tim
 
 - **Karta och lista** över alla ca 1 600 kameror i Sverige, med sökning och filter per län.
 - **Du väljer själv vilka kameror som är aktiva.** Bara aktiva kameror sparar bilder och får timelapses, så att du inte lagrar hela Sveriges kameranät. Du kan också aktivera eller avaktivera alla kameror i ett län på en gång.
-- **Timelapses på begäran:** välj en kamera, ett län eller hela Sverige, ett tidsspann (förval eller fritt i en kalender), MP4, GIF eller båda, och längd. Tryck sedan på **Generera**. Klippen sparas i ett bibliotek per kamera. Inget genereras automatiskt.
+- **Timelapses på begäran:** välj en kamera, de aktiva kamerorna i ett län eller alla aktiva kameror, ett tidsspann (förval eller fritt i en kalender), MP4, GIF eller båda, och längd. Tryck sedan på **Generera**. Klippen sparas i ett bibliotek per kamera. Inget genereras automatiskt.
 - **Graf med vägtemperatur** i timelapses och GIF:ar. Grafen hämtar data från närmaste vägväderstation inom 20 km och ritas fram bild för bild. Den är påslagen som standard och kan stängas av per kamera.
 - **Retention:** alla bilder sparas i 90 dagar. Den första bilden varje timme sparas i ett glest arkiv i 365 dagar, så att det går att göra årsklippet.
 - **Admin-sida** (`/admin.html`, skyddad med `ADMIN_PASSWORD`) där globala inställningar ändras direkt, utan omstart.
@@ -78,8 +78,8 @@ Timelapses skapas bara när någon trycker på **Generera**. Det finns ingen aut
     Man kan inte välja längre bak än den första sparade bilden, och förval som skulle börja tidigare går inte att välja. Finns inga bilder alls är rutan spärrad.
   - **Övrigt:** välj MP4, GIF eller båda, längd (10, 30, 60 eller 120 s) och temperaturgraf (standard, på, av).
   - **Bibliotek:** klippet hamnar i kamerans bibliotek, där det kan spelas upp och laddas ner. Alla kan ta bort klippets MP4, GIF eller hela klippet, eftersom det går att generera igen. Bilder tas bara bort i admin.
-- **Ett län eller hela Sverige** (admin-sidan, kräver inloggning):
-  - Avsnittet **Generera** i admin har samma genereringsruta och ett val av urval.
+- **Alla aktiva kameror eller de aktiva i ett län** (admin-sidan, kräver inloggning):
+  - Avsnittet **Generera** i admin har samma genereringsruta och ett val av urval: "Alla aktiva kameror" eller ett län. Varje val visar hur många aktiva kameror det gäller, och län utan aktiva kameror går inte att välja.
   - Varje aktiv kamera som har bilder i tidsspannet får ett eget klipp, och kameror utan bilder hoppas över.
   - Förloppet visas som en stapel under rutan, och en notis visas när körningen är klar. En körning får omfatta högst 500 kameror.
 - **Bilder:** bilderna fördelas jämnt över spannet. För dagar äldre än bildernas retention (90 dagar) används årsarkivet, med en bild per timme. Spannet kan därför vara upp till 365 dagar långt.
@@ -87,12 +87,13 @@ Timelapses skapas bara när någon trycker på **Generera**. Det finns ingen aut
 
 ## Admin
 
-Admin-sidan (`⚙ Admin` i toppraden) har en sidomeny med fem avsnitt. På mobil blir menyn flikar. Adressen följer avsnittet (till exempel `admin.html#lagring`), så att länkar och bakåtknappen fungerar.
+Admin-sidan (`⚙ Admin` i toppraden) har en sidomeny med sex avsnitt. På mobil blir menyn flikar. Adressen följer avsnittet (till exempel `admin.html#lagring`), så att länkar och bakåtknappen fungerar.
 
 | Avsnitt | Innehåll |
 |---------|----------|
 | **Översikt** | Startsidan, som uppdateras varje minut. Visar aktiva kameror, lagring och disk (med en uppskattning vid full retention), videokodare/GPU, jobbkö, nästa schemalagda körningar och de senaste genereringarna. Varningar visas för saknad `TRV_API_KEY`, lite diskutrymme, en disk som inte räcker vid full retention, misslyckade genereringar och inga aktiva kameror. |
-| **Generera** | Klipp för ett län eller hela Sverige (se ovan). |
+| **Generera** | Klipp för alla aktiva kameror eller de aktiva i ett län (se ovan). När en körning är klar leder "Visa klippen" till dess klipp. |
+| **Klipp** | Galleri med alla genererade klipp för alla kameror, nyast först. Sök på kamera och filtrera på körning eller format (MP4, GIF). Förhandsvisningen spelas när muspekaren är över. Ett klick öppnar en spelare med MP4 och GIF, nedladdning, bläddring med ‹ › eller piltangenterna, och radering av MP4, GIF eller hela klippet. "▶ Visa" i översiktens senaste genereringar öppnar samma spelare. |
 | **Lagring** | Lagring per kamera, kameravyn och "Ta bort allt som är äldre än" (se nedan). |
 | **Inställningar** | De globala inställningarna i fyra kort. |
 | **Underhåll** | Rensa allt och börja om. |
@@ -177,7 +178,8 @@ Alla inställningar finns i [`.env.example`](.env.example). Allt utom hemlighete
 | `ARCHIVE_RETENTION_DAYS` | `365` | Hur länge timarkivet sparas |
 | `NIGHTLY_HOUR` / `NIGHTLY_MINUTE` | `2` / `0` | När den dagliga rensningen (retention) körs |
 | `HWACCEL` | `auto` | `auto`, `nvidia`, `vaapi`, `qsv` eller `cpu` |
-| `MAX_CONCURRENT_JOBS` | `2` | Antal timelapse-jobb som körs samtidigt |
+| `MAX_CONCURRENT_JOBS` | `4` | Antal klipp som görs samtidigt (1–16). Fler gör generering för många kameror snabbare |
+| `MAX_GPU_ENCODES` | `3` | Högst så många MP4-kodningar på GPU:n samtidigt (1–8). GeForce-kort begränsar antalet NVENC-kodningar |
 | `TEMP_STATION_MAX_KM` | `20` | Största avstånd till en vägväderstation för temperaturgrafen |
 | `TEMP_COLLECT_INTERVAL_MINUTES` | `15` | Hur ofta vägtemperatur hämtas |
 | `DEFAULT_ENABLED_CAMERAS` | – | Kamera-id:n som aktiveras vid första start |

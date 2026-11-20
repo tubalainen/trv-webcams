@@ -232,6 +232,15 @@ def _add_missing_columns(engine) -> set[str]:
 def _migrate_data(engine, added: set[str]) -> None:
     """One-off data conversions for columns that were just added (and old tables)."""
     _migrate_timelapses_to_clips(engine)
+    # Before 0.1.10 clips from a county/all generation did not get the batch id (only the job had it)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "UPDATE clips SET batch_id = (SELECT jobs.batch_id FROM jobs WHERE jobs.clip_id = clips.id) "
+                "WHERE batch_id IS NULL AND EXISTS "
+                "(SELECT 1 FROM jobs WHERE jobs.clip_id = clips.id AND jobs.batch_id IS NOT NULL)"
+            )
+        )
     if "cameras.temp_overlay_mode" in added:
         cols = {c["name"] for c in inspect(engine).get_columns("cameras")}
         if "temp_overlay" in cols:  # 0.1.3 stored an on/off flag per camera

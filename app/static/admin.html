@@ -36,6 +36,7 @@ docker compose up -d</pre>
     <nav class="admin-nav" aria-label="Admin">
       <a href="#oversikt" data-nav="oversikt"><span class="ico" aria-hidden="true">📊</span>Översikt</a>
       <a href="#generera" data-nav="generera"><span class="ico" aria-hidden="true">🎬</span>Generera</a>
+      <a href="#klipp" data-nav="klipp"><span class="ico" aria-hidden="true">🎞️</span>Klipp</a>
       <a href="#lagring" data-nav="lagring"><span class="ico" aria-hidden="true">💾</span>Lagring</a>
       <a href="#installningar" data-nav="installningar"><span class="ico" aria-hidden="true">⚙️</span>Inställningar</a>
       <a href="#underhall" data-nav="underhall"><span class="ico" aria-hidden="true">🧹</span>Underhåll</a>
@@ -70,20 +71,58 @@ docker compose up -d</pre>
       <section data-view="generera" aria-labelledby="h-generera" hidden>
         <header class="view-head">
           <h1 id="h-generera">Generera</h1>
-          <p class="muted">Skapa klipp för alla aktiva kameror i ett län eller i hela Sverige. Ett klipp görs per
+          <p class="muted">Skapa klipp för alla aktiva kameror, eller för de aktiva i ett län. Ett klipp görs per
             kamera som har bilder i tidsspannet och hamnar i kamerans bibliotek. Enskilda kameror genereras
             på kamerasidan.</p>
         </header>
         <div class="card">
           <label class="field batch-scope"><span>Urval</span>
-            <select id="batchScope"><option value="">Hela Sverige</option></select></label>
+            <select id="batchScope"><option value="">Alla aktiva kameror</option></select></label>
           <div id="batchGenerator"></div>
           <div id="batchProgressWrap" class="progress-wrap" hidden>
             <div class="bar"><i id="batchBar"></i></div>
             <p id="batchProgress" class="muted" role="status"></p>
+            <button type="button" class="btn small" id="batchShowClips" hidden>Visa klippen →</button>
           </div>
         </div>
       </section>
+
+      <!-- Klipp -->
+      <section data-view="klipp" aria-labelledby="h-klipp" hidden>
+        <header class="view-head">
+          <h1 id="h-klipp">Klipp</h1>
+          <p class="muted">Alla genererade timelapses (MP4) och GIF:ar, nyast först. Klicka på ett klipp för att spela
+            upp, ladda ner eller ta bort det.</p>
+        </header>
+        <div class="card clip-tools">
+          <input type="search" id="clipSearch" placeholder="Sök kamera…" aria-label="Sök kamera">
+          <label class="field inline"><span>Körning</span>
+            <select id="clipBatch"><option value="">Alla klipp</option></select></label>
+          <div class="seg" role="radiogroup" aria-label="Format">
+            <label><input type="radio" name="clipKind" value="" checked><span>Alla</span></label>
+            <label><input type="radio" name="clipKind" value="mp4"><span>MP4</span></label>
+            <label><input type="radio" name="clipKind" value="gif"><span>GIF</span></label>
+          </div>
+        </div>
+        <p class="muted clip-count" id="clipCount" role="status"></p>
+        <div class="clip-gallery" id="clipGrid"></div>
+        <button type="button" class="btn ghost" id="clipMore" hidden>Visa fler</button>
+      </section>
+
+      <dialog id="clipPlayer" class="img-dialog clip-player" aria-labelledby="cpTitle">
+        <div class="cp-head">
+          <button type="button" class="btn small ghost" id="cpPrev" aria-label="Föregående klipp">‹</button>
+          <div class="cp-title"><h2 id="cpTitle"></h2><p class="muted" id="cpMeta"></p></div>
+          <button type="button" class="btn small ghost" id="cpNext" aria-label="Nästa klipp">›</button>
+          <form method="dialog"><button class="btn small ghost">Stäng</button></form>
+        </div>
+        <div class="seg cp-tabs" id="cpTabs" role="radiogroup" aria-label="Visa">
+          <label><input type="radio" name="cpKind" value="mp4"><span>MP4</span></label>
+          <label><input type="radio" name="cpKind" value="gif"><span>GIF</span></label>
+        </div>
+        <div id="cpMedia" class="cp-media"></div>
+        <div class="cp-actions" id="cpActions"></div>
+      </dialog>
 
       <!-- Lagring -->
       <section data-view="lagring" aria-labelledby="h-lagring" hidden>

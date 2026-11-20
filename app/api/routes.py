@@ -390,7 +390,7 @@ def batch_dict(b: Batch) -> dict:
         "id": b.id,
         "scope": b.scope,
         "county_no": b.county_no,
-        "county": COUNTIES.get(b.county_no or 0, "") if b.scope == "county" else "Hela Sverige",
+        "county": COUNTIES.get(b.county_no or 0, "") if b.scope == "county" else "Alla aktiva kameror",
         "range_start": _iso(b.range_start),
         "range_end": _iso(b.range_end),
         "formats": b.formats.split(","),
@@ -401,6 +401,55 @@ def batch_dict(b: Batch) -> dict:
         "finished": counts.get("queued", 0) + counts.get("running", 0) == 0,
         "created_at": _iso(b.created_at),
     }
+
+
+@router.get("/api/batches")
+def list_batches(limit: int = 20) -> list[dict]:
+    """The latest generations for many cameras, newest first, with their number of clips."""
+    limit = max(1, min(limit, 100))
+    with session_scope() as s:
+        batches = list(s.scalars(select(Batch).order_by(Batch.id.desc()).limit(limit)))
+        clips = dict(
+            s.execute(
+                select(Clip.batch_id, func.count())
+                .where(Clip.batch_id.in_([b.id for b in batches]))
+                .group_by(Clip.batch_id)
+            ).all()
+        )
+    return [batch_dict(b) | {"clips": clips.get(b.id, 0)} for b in batches]
+
+
+@router.get("/api/clips")
+def all_clips(
+    q: str = "", batch_id: int | None = None, kind: str = "", limit: int = 48, offset: int = 0
+) -> dict:
+    """Clips for all cameras, newest first. q filters on the camera name, kind on mp4/gif."""
+    limit = max(1, min(limit, 200))
+    where = []
+    if q.strip():
+        where.append(Camera.name.ilike(f"%{q.strip()}%"))
+    if batch_id is not None:
+        where.append(Clip.batch_id == batch_id)
+    if kind == "mp4":
+        where.append(Clip.mp4_path.is_not(None))
+    elif kind == "gif":
+        where.append(Clip.gif_path.is_not(None))
+    with session_scope() as s:
+        total, size = s.execute(
+            select(func.count(), func.coalesce(func.sum(Clip.mp4_bytes + Clip.gif_bytes), 0))
+            .join(Camera, Camera.id == Clip.camera_id)
+            .where(*where)
+        ).one()
+        rows = s.execute(
+            select(Clip, Camera.name)
+            .join(Camera, Camera.id == Clip.camera_id)
+            .where(*where)
+            .order_by(Clip.id.desc())
+            .limit(limit)
+            .offset(max(0, offset))
+        ).all()
+        clips = [clip_dict(c) | {"camera_name": name} for c, name in rows]
+    return {"total": total, "bytes": int(size), "clips": clips}
 
 
 @router.get("/api/batches/{batch_id}")
