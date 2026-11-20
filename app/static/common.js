@@ -62,3 +62,57 @@ async function loadStatus() {
     el.textContent = "Status ej tillgänglig";
   }
 }
+
+/* Toast notifications: toast("Sparat", "ok" | "error" | "info"). */
+function toast(msg, kind = "info", ms = 5000) {
+  let box = document.getElementById("toasts");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "toasts";
+    box.className = "toasts";
+    box.setAttribute("role", "status");
+    box.setAttribute("aria-live", "polite");
+    document.body.appendChild(box);
+  }
+  const t = document.createElement("div");
+  t.className = `toast ${kind}`;
+  t.innerHTML = `<span class="toast-ico" aria-hidden="true">${{ ok: "✓", error: "!", info: "i" }[kind] || "i"}</span>` +
+    `<span class="toast-msg"></span><button type="button" class="toast-x" aria-label="Stäng">×</button>`;
+  t.querySelector(".toast-msg").textContent = msg;
+  const close = () => { t.classList.add("out"); setTimeout(() => t.remove(), 200); };
+  t.querySelector(".toast-x").addEventListener("click", close);
+  box.appendChild(t);
+  if (ms) setTimeout(close, kind === "error" ? ms * 2 : ms);
+  return t;
+}
+
+/* Modal dialog in the app's style. Resolves with the value of the chosen button, or null
+ * when cancelled (Esc, backdrop or the cancel button).
+ * buttons: [{label, value, kind: "primary" | "danger" | "ghost"}] */
+function appDialog({ title, body = "", buttons }) {
+  return new Promise((resolve) => {
+    const d = document.createElement("dialog");
+    d.className = "dialog";
+    const paras = String(body).split(/\n\n+/).filter(Boolean).map((p) => `<p>${esc(p)}</p>`).join("");
+    d.innerHTML = `<h2>${esc(title)}</h2><div class="dialog-body">${paras}</div><div class="dialog-actions">` +
+      buttons.map((b, i) => `<button type="button" class="btn ${b.kind === "danger" ? "danger" :
+        b.kind === "ghost" ? "ghost" : ""}" data-i="${i}">${esc(b.label)}</button>`).join("") + "</div>";
+    let result = null;
+    d.addEventListener("click", (ev) => {
+      const b = ev.target.closest("[data-i]");
+      if (b) { result = buttons[Number(b.dataset.i)].value; d.close(); }
+      else if (ev.target === d) d.close(); // backdrop
+    });
+    d.addEventListener("close", () => { d.remove(); resolve(result); });
+    document.body.appendChild(d);
+    d.showModal();
+    // Focus the safe choice first
+    (d.querySelector(".btn.ghost") || d.querySelector(".btn")).focus();
+  });
+}
+
+const confirmDialog = ({ title, body, confirmText = "OK", danger = false }) =>
+  appDialog({ title, body, buttons: [
+    { label: "Avbryt", value: false, kind: "ghost" },
+    { label: confirmText, value: true, kind: danger ? "danger" : "primary" },
+  ] }).then((v) => v === true);

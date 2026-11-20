@@ -1,62 +1,186 @@
-/* Admin page: login and global settings */
+/* Admin page: navigation, overview, generation, storage, settings and maintenance */
 const $ = (id) => document.getElementById(id);
-let data = null;
+let data = null; // settings payload from api/admin/settings
 
-function fmtValue(f, v) {
-  if (f.kind === "bool" || f.kind === "choice") {
-    const c = f.choices.find((x) => x.value === String(v));
-    return c ? c.label : String(v);
-  }
-  return `${String(v).replace(".", ",")}${f.unit ? ` ${f.unit}` : ""}`;
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+/* ---- Navigation (hash routing) ---- */
+const VIEWS = {
+  oversikt: "Översikt", generera: "Generera", lagring: "Lagring",
+  installningar: "Inställningar", underhall: "Underhåll",
+};
+let currentView = null;
+
+const viewFromHash = () => (VIEWS[location.hash.slice(1)] ? location.hash.slice(1) : "oversikt");
+
+function showView(name) {
+  currentView = name;
+  document.querySelectorAll("[data-view]").forEach((s) => { s.hidden = s.dataset.view !== name; });
+  document.querySelectorAll("[data-nav]").forEach((a) => {
+    if (a.dataset.nav === name) {
+      a.setAttribute("aria-current", "page");
+      a.scrollIntoView({ block: "nearest", inline: "nearest" });
+    } else {
+      a.removeAttribute("aria-current");
+    }
+  });
+  document.title = `${VIEWS[name]} – Admin – TRV Webbkameror`;
+  window.scrollTo(0, 0);
+  if (name === "oversikt") renderOverview();
+  if (name === "generera") setupBatch();
+  if (name === "lagring" && (!storageData || Date.now() - storageAt > 60000)) loadStorage();
 }
 
-function inputFor(f) {
-  const id = `f_${f.key}`;
-  if (f.choices.length) {
-    const opts = f.choices.map((c) =>
-      `<option value="${esc(c.value)}"${c.value === String(f.value) ? " selected" : ""}>${esc(c.label)}</option>`).join("");
-    return `<select id="${id}" name="${f.key}">${opts}</select>`;
+async function route() {
+  const next = viewFromHash();
+  if (currentView === "installningar" && next !== "installningar" && dirtyFields().length) {
+    const n = dirtyFields().length;
+    const choice = await appDialog({
+      title: "Osparade ändringar",
+      body: `Du har ${plural(n, "osparad ändring", "osparade ändringar")} i inställningarna.`,
+      buttons: [
+        { label: "Stanna kvar", value: "stay", kind: "ghost" },
+        { label: "Släng ändringarna", value: "discard", kind: "ghost" },
+        { label: "Spara", value: "save" },
+      ],
+    });
+    if (choice === "save" && await saveDirty()) { showView(next); return; }
+    if (choice === "discard") { renderSettings(); showView(next); return; }
+    history.replaceState(null, "", "#installningar"); // stay
+    return;
   }
-  const step = f.kind === "float" ? "0.5" : "1";
-  return `<span class="with-unit"><input id="${id}" name="${f.key}" type="number" step="${step}"
-    min="${f.min ?? ""}" max="${f.max ?? ""}" value="${esc(f.value)}" required>${f.unit ? `<span>${esc(f.unit)}</span>` : ""}</span>`;
+  if (next !== currentView) showView(next);
+}
+window.addEventListener("hashchange", route);
+
+/* ---- Cameras (names for jobs, enabled list for batches) ---- */
+let allCams = [];
+let camsAt = 0;
+async function loadCams() {
+  if (Date.now() - camsAt > 60000) {
+    allCams = await api("api/cameras");
+    camsAt = Date.now();
+  }
+  return allCams;
+}
+const camName = (id) => allCams.find((c) => c.id === id)?.name || id;
+
+/* ---- Översikt ---- */
+const RUNS = [
+  ["collect", "Hämta bilder"],
+  ["temps", "Hämta vägtemperatur"],
+  ["retention", "Daglig rensning"],
+  ["sync", "Synka kameralistan"],
+];
+const JOB_STATUS = {
+  queued: ["I kö", ""], running: ["Pågår", "info"], done: ["Klar", "on"],
+  failed: ["Misslyckades", "bad"], skipped: ["Hoppades över", ""],
+};
+
+function relTime(iso) {
+  if (!iso) return "–";
+  const min = Math.round((new Date(iso) - Date.now()) / 60000);
+  if (min < 1) return "nu";
+  if (min < 60) return `om ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `om ${h} h${min % 60 ? ` ${min % 60} min` : ""}`;
+  return `om ${plural(Math.round(h / 24), "dygn", "dygn")}`;
 }
 
-function render() {
+const statCard = (icon, label, value, sub, extra = "") => `
+  <div class="card stat">
+    <span class="stat-label"><span aria-hidden="true">${icon}</span> ${label}</span>
+    <span class="stat-value">${value}</span>
+    <span class="stat-sub">${sub}</span>${extra}
+  </div>`;
+
+const alertBox = (kind, text, link) => `
+  <div class="alert ${kind}" role="${kind === "bad" ? "alert" : "status"}">
+    <span class="alert-ico" aria-hidden="true">${{ bad: "⛔", warn: "⚠️", info: "ℹ️", ok: "✓" }[kind]}</span>
+    <span>${text}</span>${link ? `<a href="${link[0]}">${link[1]}</a>` : ""}
+  </div>`;
+
+async function renderOverview() {
+  let s, jobs;
+  try {
+    [s, jobs] = await Promise.all([api("api/status"), api("api/jobs?limit=10"), loadCams()]);
+  } catch (e) {
+    $("ovAlerts").innerHTML = alertBox("bad", `Kunde inte läsa läget: ${esc(e.message)}`);
+    return;
+  }
   const i = data.info;
-  $("info").innerHTML = `
-    <span>🎥 ${i.cameras_enabled} aktiva kameror, varav ${i.cameras_enabled_hd} sparar högupplöst</span>
-    <span>🖼️ ${i.cameras_with_hd} av ${i.cameras_checked} kontrollerade kameror har högupplösta bilder</span>`;
-  $("groups").innerHTML = data.groups.map((g) => {
-    const fields = data.fields.filter((f) => f.group === g.key);
-    return `<fieldset class="card"><legend>${esc(g.label)}</legend>${fields.map((f) => `
-      <div class="setting">
-        <label class="field" for="f_${f.key}"><span>${esc(f.label)}</span>${inputFor(f)}</label>
-        <p class="muted">${esc(f.help)}${f.help ? " " : ""}
-          ${f.saved ? `Ändrad här (standard från .env: ${esc(fmtValue(f, f.env_default))}).
-            <button type="button" class="linklike" data-reset="${f.key}">Återställ</button>` :
-            "Standard från .env."}</p>
-      </div>`).join("")}</fieldset>`;
-  }).join("");
+  const appUsed = s.usage.snapshots_bytes + s.usage.timelapses_bytes;
+  const total = s.disk_total_bytes || 1;
+  const free = s.disk_free_bytes;
+  const other = Math.max(0, total - free - appUsed);
+  const growth = Math.max(0, s.estimated_bytes_at_retention - s.usage.snapshots_bytes);
+  const pct = (b) => `${Math.min(100, Math.max(0, (b / total) * 100)).toFixed(1)}%`;
+  const failed = jobs.filter((j) => j.status === "failed");
+
+  // Warnings
+  const alerts = [];
+  if (!s.api_key_configured) {
+    alerts.push(alertBox("bad", "<b>TRV_API_KEY saknas.</b> Inga bilder kan hämtas från Trafikverket. " +
+      "Sätt nyckeln i <code>.env</code> och starta om containern."));
+  }
+  if (free < 5 * 1024 ** 3 || free / total < 0.1) {
+    alerts.push(alertBox("bad", `<b>Lite diskutrymme kvar:</b> ${fmtBytes(free)} ledigt ` +
+      `(${Math.round((free / total) * 100)} %).`, ["#lagring", "Gå till Lagring"]));
+  } else if (growth > free) {
+    alerts.push(alertBox("warn", `<b>Disken räcker inte vid full retention.</b> Bilderna kan växa med ungefär ` +
+      `${fmtBytes(growth)}, men bara ${fmtBytes(free)} är ledigt. Sänk retentionen, välj färre kameror ` +
+      "eller lågupplösta bilder.", ["#installningar", "Inställningar"]));
+  }
+  if (failed.length) {
+    alerts.push(alertBox("warn", `${failed.length} av de ${jobs.length} senaste genereringarna misslyckades.`));
+  }
+  if (!s.cameras_enabled) {
+    alerts.push(alertBox("info", "Inga kameror är aktiva. Välj kameror på kartan för att börja spara bilder.",
+      ["./", "Välj kameror"]));
+  }
+  $("ovAlerts").innerHTML = alerts.join("") || alertBox("ok", "Allt ser bra ut.");
+
+  // Cards
+  const enc = s.encoder;
+  $("ovStats").innerHTML = [
+    statCard("🎥", "Kameror", `${s.cameras_enabled}`,
+      `aktiva av ${s.cameras_total} · ${i.cameras_enabled_hd} sparar högupplöst`,
+      '<a class="stat-link" href="./">Välj kameror →</a>'),
+    statCard("💾", "Lagring", fmtBytes(appUsed),
+      `bilder och klipp · ≈${fmtBytes(s.estimated_bytes_at_retention)} vid full retention`,
+      `<div class="disk-bar" title="Appen ${fmtBytes(appUsed)}, annat ${fmtBytes(other)}, ledigt ${fmtBytes(free)}">
+        <i class="app" style="width:${pct(appUsed)}"></i><i class="other" style="width:${pct(other)}"></i></div>
+       <span class="stat-sub">${fmtBytes(free)} ledigt av ${fmtBytes(total)}</span>`),
+    statCard("⚙️", "Videokodare", enc ? esc(enc.codec) : "detekterar…",
+      enc ? (enc.mode === "cpu" ? "CPU-kodning, ingen GPU hittades" :
+        esc(s.gpus.length ? s.gpus.join(", ") : "GPU")) : "Kontrollerar GPU vid start"),
+    statCard("⏳", "Jobb", `${s.jobs_pending}`, s.jobs_pending ? "i kö eller pågår" : "Inga jobb i kö"),
+  ].join("");
+
+  // Scheduled runs
+  const runs = RUNS.filter(([id]) => id in s.next_runs);
+  $("ovRuns").innerHTML = runs.length
+    ? runs.map(([id, label]) => `<dt>${label}</dt><dd><b>${relTime(s.next_runs[id])}</b>
+        <span class="muted">${fmtTime(s.next_runs[id])}</span></dd>`).join("")
+    : '<p class="muted">Schemaläggaren är avstängd (<code>SCHEDULER_ENABLED=false</code>).</p>';
+
+  // Recent jobs
+  $("ovJobs").innerHTML = jobs.length ? jobs.map((j) => {
+    const [label, cls] = JOB_STATUS[j.status] || [j.status, ""];
+    return `<li>
+      <span class="badge ${cls}">${label}</span>
+      <span class="job-main"><a href="camera.html?id=${encodeURIComponent(j.camera_id)}">${esc(camName(j.camera_id))}</a>
+        <span class="muted">${fmtTime(j.range_start)} – ${fmtTime(j.range_end)} · ${esc(j.formats.join(", ").toUpperCase())}
+          ${j.batch_id ? " · län/Sverige" : ""}</span>
+        ${j.status === "failed" && j.message ? `<span class="muted warn">${esc(j.message)}</span>` : ""}</span>
+      <span class="muted job-time">${fmtTime(j.created_at)}</span></li>`;
+  }).join("") : '<li class="muted">Inga genereringar ännu.</li>';
 }
 
-async function showSettings() {
-  data = await api("api/admin/settings");
-  $("login").hidden = true;
-  $("settings").hidden = false;
-  $("logout").hidden = false;
-  $("cleanup").hidden = false;
-  $("batch").hidden = false;
-  render();
-  loadStorage();
-  setupBatch();
-}
-
-/* ---- Generate for a county or all of Sweden ---- */
+/* ---- Generera: a county or all of Sweden ---- */
 let batchGen = null;
 let batchTimer = null;
 let counties = {};
-let enabledCams = [];
 
 function batchScope() {
   const county = $("batchScope").value;
@@ -67,7 +191,7 @@ function batchScope() {
 
 const enabledInScope = () => {
   const sc = batchScope();
-  return enabledCams.filter((c) => sc.scope === "all" || c.county_no === sc.county_no).length;
+  return allCams.filter((c) => c.enabled && (sc.scope === "all" || c.county_no === sc.county_no)).length;
 };
 
 async function pollBatch(id) {
@@ -76,16 +200,20 @@ async function pollBatch(id) {
     const b = await api(`api/batches/${id}`);
     const s = b.status;
     const done = s.done + s.failed + s.skipped;
+    $("batchProgressWrap").hidden = false;
+    $("batchBar").style.width = `${b.total ? (done / b.total) * 100 : 100}%`;
     $("batchProgress").textContent = `${b.county}: ${done} av ${b.total} klara` +
       (s.failed ? `, ${s.failed} misslyckades` : "") + (s.skipped ? `, ${s.skipped} hoppades över` : "") +
       (b.finished ? " ✓" : " …");
     if (!b.finished) batchTimer = setTimeout(() => pollBatch(id), 3000);
+    else toast(`Generering klar för ${b.county}: ${b.total - s.failed} av ${b.total} klipp.`,
+      s.failed ? "error" : "ok");
   } catch (_) { /* batch removed */ }
 }
 
 async function setupBatch() {
-  if (batchGen) return;
-  [counties, enabledCams] = await Promise.all([api("api/counties"), api("api/cameras?enabled=true")]);
+  if (batchGen) { loadCams(); return; }
+  [counties] = await Promise.all([api("api/counties"), loadCams()]);
   $("batchScope").innerHTML = `<option value="">Hela Sverige</option>` + Object.entries(counties)
     .sort((a, b) => a[1].localeCompare(b[1], "sv"))
     .map(([no, name]) => `<option value="${no}">${esc(name)}</option>`).join("");
@@ -108,8 +236,9 @@ async function setupBatch() {
   $("batchScope").addEventListener("change", () => batchGen.reloadAvailability());
 }
 
-/* ---- Storage and cleanup ---- */
+/* ---- Lagring ---- */
 let storageData = null;
+let storageAt = 0;
 const isoDay = (d) => d.toISOString().slice(0, 10);
 const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return isoDay(d); };
 // storage day rows: [day, snapshot images, snapshot bytes, archive images, archive-only bytes]
@@ -119,7 +248,13 @@ const sumDays = (days, test) => days.filter((d) => test(d[0]))
   .reduce((a, d) => [a[0] + dayImages(d), a[1] + dayBytes(d)], [0, 0]);
 
 async function loadStorage() {
-  storageData = await api("api/admin/storage");
+  try {
+    storageData = await api("api/admin/storage");
+  } catch (e) {
+    toast(`Kunde inte läsa lagringen: ${e.message}`, "error");
+    return;
+  }
+  storageAt = Date.now();
   const sel = $("purgeCamera");
   const cur = sel.value;
   sel.innerHTML = `<option value="">Alla kameror</option>` + storageData.cameras.map((c) =>
@@ -133,9 +268,10 @@ async function loadStorage() {
   updatePreview();
 }
 
-function updatePreview() {
+/** Returns {text, imgs, clips, bytes} for the "older than" form. */
+function purgeEstimate() {
   const before = $("purgeDate").value;
-  if (!storageData || !before) { $("purgePreview").textContent = ""; return; }
+  if (!storageData || !before) return null;
   const what = $("purgeWhat").value, camId = $("purgeCamera").value;
   const cams = storageData.cameras.filter((c) => !camId || c.id === camId);
   let imgs = 0, bytes = 0, clips = 0;
@@ -151,9 +287,16 @@ function updatePreview() {
     }
   }
   const parts = [];
-  if (what !== "timelapses") parts.push(`${imgs} bilder`);
-  if (what !== "images") parts.push(`${clips} timelapses`);
-  $("purgePreview").textContent = `Tar bort ungefär ${parts.join(" och ")} (${fmtBytes(bytes)}) från före ${before}.`;
+  if (what !== "timelapses") parts.push(plural(imgs, "bild", "bilder"));
+  if (what !== "images") parts.push(plural(clips, "klipp", "klipp"));
+  const where = camId ? cams[0]?.name || "" : "alla kameror";
+  return { imgs, clips, bytes, text: `${parts.join(" och ")} (${fmtBytes(bytes)}) från före ${before}, ${where}` };
+}
+
+function updatePreview() {
+  const est = purgeEstimate();
+  $("purgePreview").innerHTML = est ? `Tar bort ungefär <b>${esc(est.text)}</b>.` : "Välj ett datum.";
+  $("purgeBtn").disabled = !est || (!est.imgs && !est.clips);
 }
 
 for (const id of ["purgeDate", "purgeWhat", "purgeCamera"]) $(id).addEventListener("input", updatePreview);
@@ -163,18 +306,29 @@ document.querySelectorAll("[data-days]").forEach((b) => b.addEventListener("clic
 }));
 $("purgeDate").max = isoDay(new Date());
 
+const doneText = (r) => `${plural(r.files, "fil", "filer")}${r.timelapses ? ` och ${plural(r.timelapses, "klipp", "klipp")}` : ""}` +
+  ` borttagna, ${fmtBytes(r.bytes)} frigjort.`;
+
 $("purge").addEventListener("submit", async (ev) => {
   ev.preventDefault();
-  updatePreview();
-  if (!confirm(`${$("purgePreview").textContent}\n\nDet går inte att ångra. Fortsätt?`)) return;
-  $("purgeResult").textContent = "Tar bort…";
+  const est = purgeEstimate();
+  if (!est) return;
+  const ok = await confirmDialog({
+    title: "Ta bort äldre data?", danger: true, confirmText: "Ta bort",
+    body: `Tar bort ungefär ${est.text}.\n\nDet går inte att ångra.`,
+  });
+  if (!ok) return;
+  $("purgeBtn").disabled = true;
   try {
     const r = await api("api/admin/purge", { method: "POST", body: {
       before: $("purgeDate").value, what: $("purgeWhat").value, camera_id: $("purgeCamera").value || null } });
-    $("purgeResult").textContent = `Klart: ${r.files} filer och ${r.timelapses} timelapses borttagna, ${fmtBytes(r.bytes)} frigjort.`;
+    toast(`Klart: ${doneText(r)}`, "ok");
     await loadStorage();
     loadStatus();
-  } catch (e) { $("purgeResult").textContent = `Kunde inte ta bort: ${e.message}`; }
+  } catch (e) {
+    toast(`Kunde inte ta bort: ${e.message}`, "error");
+    updatePreview();
+  }
 });
 
 function camStats(c) {
@@ -191,8 +345,15 @@ function renderStorageTable() {
     const st = camStats(c);
     totImgs += st.imgs; totBytes += st.bytes; totClips += st.clips; totClipBytes += st.clipBytes; totDays += c.days.length;
   }
-  $("storageSummary").textContent = `${cams.length} kameror med data · ${totImgs} bilder på ${totDays} kameradagar ` +
-    `(${fmtBytes(totBytes)}) · ${totClips} klipp (${fmtBytes(totClipBytes)}) · ${fmtBytes(storageData.disk_free_bytes)} ledigt`;
+  const mini = (label, value, sub) =>
+    `<div class="card stat"><span class="stat-label">${label}</span><span class="stat-value">${value}</span>` +
+    `<span class="stat-sub">${sub}</span></div>`;
+  $("storageSummary").innerHTML = [
+    mini("Kameror med data", cams.length, `${totDays} kameradagar`),
+    mini("Bilder", totImgs.toLocaleString("sv-SE"), fmtBytes(totBytes)),
+    mini("Klipp", totClips, fmtBytes(totClipBytes)),
+    mini("Ledigt på disken", fmtBytes(storageData.disk_free_bytes), "för nya bilder och klipp"),
+  ].join("");
   const q = $("storageSearch").value.trim().toLowerCase();
   const sort = $("storageSort").value;
   const rows = cams.filter((c) => !q || c.name.toLowerCase().includes(q)).map((c) => ({ c, st: camStats(c) }));
@@ -205,14 +366,15 @@ function renderStorageTable() {
   }[sort];
   rows.sort(by);
   $("storageRows").innerHTML = rows.length ? rows.map(({ c, st }) => `
-    <tr class="clickable${cv.id === c.id ? " selected" : ""}" data-cam="${esc(c.id)}" tabindex="0">
+    <tr class="clickable" data-cam="${esc(c.id)}" tabindex="0">
       <td><a href="camera.html?id=${encodeURIComponent(c.id)}" data-link>${esc(c.name)}</a>
         ${c.enabled ? "" : '<span class="badge">inaktiv</span>'}</td>
       <td>${st.imgs}</td>
       <td>${c.days.length}${st.first ? ` <span class="muted">(${st.first} – ${st.last})</span>` : ""}</td>
       <td>${fmtBytes(st.bytes)}</td>
       <td>${st.clips}${st.clips ? ` <span class="muted">(${fmtBytes(st.clipBytes)})</span>` : ""}</td>
-    </tr>`).join("") : `<tr><td colspan="5" class="muted">${cams.length ? "Inga kameror matchar sökningen." :
+      <td class="chev" aria-hidden="true">›</td>
+    </tr>`).join("") : `<tr><td colspan="6" class="muted">${cams.length ? "Inga kameror matchar sökningen." :
       "Inga sparade bilder eller klipp."}</td></tr>`;
 }
 
@@ -255,6 +417,9 @@ function openCamView(id, keepSelection = false) {
   const last = cam.days.length ? cam.days[cam.days.length - 1][0] : isoDay(new Date());
   if (changed || !cv.month) cv.month = new Date(`${last.slice(0, 7)}-01T00:00`);
   const st = camStats(cam);
+  $("storageList").hidden = true;
+  $("purge").hidden = true;
+  $("storageSummary").hidden = true;
   $("camView").hidden = false;
   $("cvName").innerHTML = `<a href="camera.html?id=${encodeURIComponent(id)}">${esc(cam.name)}</a>`;
   $("cvMeta").textContent = `${st.imgs} bilder på ${cam.days.length} dagar (${fmtBytes(st.bytes)})` +
@@ -262,14 +427,18 @@ function openCamView(id, keepSelection = false) {
   $("cvBefore").max = isoDay(new Date());
   renderCamCalendar();
   renderSelection();
-  renderStorageTable();
-  if (changed) $("camView").scrollIntoView({ behavior: "smooth", block: "start" });
+  if (changed) window.scrollTo(0, 0);
 }
 
 function closeCamView() {
+  const id = cv.id;
   cv.id = null;
   $("camView").hidden = true;
+  $("storageList").hidden = false;
+  $("purge").hidden = false;
+  $("storageSummary").hidden = false;
   renderStorageTable();
+  if (id) $("storageRows").querySelector(`[data-cam="${CSS.escape(id)}"]`)?.focus();
 }
 
 function renderCamCalendar() {
@@ -299,16 +468,21 @@ function renderCamCalendar() {
   $("cvNext").disabled = !lastDay || cur >= ym(lastDay);
 }
 
-function renderSelection() {
+function selectionText() {
   const sel = [...cv.selected].sort();
   let imgs = 0, bytes = 0;
   for (const k of sel) { const d = cv.byDay.get(k); imgs += dayImages(d); bytes += dayBytes(d); }
-  $("cvSelection").textContent = sel.length
-    ? `${sel.length} ${sel.length === 1 ? "dag" : "dagar"} markerade: ${imgs} bilder, ${fmtBytes(bytes)}` +
+  return sel.length
+    ? `${plural(sel.length, "dag", "dagar")}: ${plural(imgs, "bild", "bilder")}, ${fmtBytes(bytes)}` +
       ` (${sel[0]}${sel.length > 1 ? ` – ${sel[sel.length - 1]}` : ""})`
-    : "Inga dagar markerade.";
-  $("cvDelDays").disabled = !sel.length;
-  $("cvClear").disabled = !sel.length;
+    : "";
+}
+
+function renderSelection() {
+  const n = cv.selected.size;
+  $("cvSelection").textContent = n ? selectionText() : "Inga dagar markerade.";
+  $("cvDelDays").disabled = !n;
+  $("cvClear").disabled = !n;
   const fd = cv.focusDay && cv.byDay.get(cv.focusDay);
   $("cvShow").hidden = !fd;
   $("cvDayTitle").textContent = fd ? `${cv.focusDay}: ${dayImages(fd)} bilder${fd[1] === 0 ? " (bara timbilder)" : ""}` : "";
@@ -377,24 +551,24 @@ $("cvThumbs").addEventListener("click", (ev) => {
   $("cvImage").showModal();
 });
 
-async function cvDelete(question, request) {
-  if (!confirm(`${question}\n\nDet går inte att ångra.`)) return null;
-  $("cvResult").textContent = "Tar bort…";
+async function cvDelete(title, body, request) {
+  const ok = await confirmDialog({ title, body: `${body}\n\nDet går inte att ångra.`, confirmText: "Ta bort", danger: true });
+  if (!ok) return null;
   try {
     const r = await request();
-    $("cvResult").textContent = `Klart: ${r.files} filer${r.timelapses ? ` och ${r.timelapses} klipp` : ""} borttagna, ${fmtBytes(r.bytes)} frigjort.`;
+    toast(`Klart: ${doneText(r)}`, "ok");
     await loadStorage();
     loadStatus();
     return r;
   } catch (e) {
-    $("cvResult").textContent = `Kunde inte ta bort: ${e.message}`;
+    toast(`Kunde inte ta bort: ${e.message}`, "error");
     return null;
   }
 }
 
 $("cvDelImage").addEventListener("click", async () => {
   const name = cv.image;
-  const r = await cvDelete(`Ta bort bilden ${cv.focusDay} ${fmtName(name)}?`,
+  const r = await cvDelete("Ta bort bilden?", `${cv.cam.name}, ${cv.focusDay} ${fmtName(name)}.`,
     () => api(`${camApi()}/snapshots/${cv.focusDay}/${name}.jpg`, { method: "DELETE" }));
   if (!r) return;
   $("cvImage").close();
@@ -405,81 +579,237 @@ $("cvDelImage").addEventListener("click", async () => {
 
 $("cvDelDays").addEventListener("click", () => {
   const days = [...cv.selected].sort();
-  cvDelete(`Ta bort alla bilder från ${days.length} ${days.length === 1 ? "dag" : "dagar"} (${$("cvSelection").textContent})?`,
+  cvDelete(`Ta bort ${plural(days.length, "dag", "dagar")}?`, `Alla bilder för ${cv.cam.name} under ${selectionText()}.`,
     () => api(`${camApi()}/delete-images`, { method: "POST", body: { days } }))
     .then((r) => { if (r) { cv.selected.clear(); $("cvThumbs").innerHTML = ""; renderSelection(); } });
 });
 
 $("cvDelBefore").addEventListener("click", () => {
   const before = $("cvBefore").value;
-  if (!before) { $("cvResult").textContent = "Välj ett datum."; return; }
+  if (!before) { toast("Välj ett datum först.", "info"); $("cvBefore").focus(); return; }
   const [n, b] = sumDays(cv.cam.days, (d) => d < before);
-  cvDelete(`Ta bort ${n} bilder (${fmtBytes(b)}) från före ${before} för ${cv.cam.name}?`,
+  if (!n) { toast(`${cv.cam.name} har inga bilder från före ${before}.`, "info"); return; }
+  cvDelete("Ta bort äldre bilder?", `${plural(n, "bild", "bilder")} (${fmtBytes(b)}) från före ${before} för ${cv.cam.name}.`,
     () => api(`${camApi()}/delete-images`, { method: "POST", body: { before } }));
 });
 
 $("cvDelAll").addEventListener("click", () => {
   const st = camStats(cv.cam);
-  cvDelete(`Ta bort ALLA ${st.imgs} bilder (${fmtBytes(st.bytes)}) för ${cv.cam.name}?`,
-    () => api(`${camApi()}/delete-images`, { method: "POST", body: { all: true } }));
+  cvDelete("Ta bort alla bilder?", `Alla ${plural(st.imgs, "bild", "bilder")} (${fmtBytes(st.bytes)}) för ${cv.cam.name}. ` +
+    "Klippen behålls.", () => api(`${camApi()}/delete-images`, { method: "POST", body: { all: true } }));
 });
 
 $("cvDelClips").addEventListener("click", () => {
   const st = camStats(cv.cam);
-  cvDelete(`Ta bort alla ${st.clips} klipp (${fmtBytes(st.clipBytes)}) för ${cv.cam.name}?`,
-    () => api(`${camApi()}/timelapses`, { method: "DELETE" }));
+  if (!st.clips) { toast(`${cv.cam.name} har inga klipp.`, "info"); return; }
+  cvDelete("Ta bort alla klipp?", `Alla ${plural(st.clips, "klipp", "klipp")} (${fmtBytes(st.clipBytes)}) för ${cv.cam.name}. ` +
+    "Bilderna behålls.", () => api(`${camApi()}/timelapses`, { method: "DELETE" }));
 });
 
+/* ---- Underhåll ---- */
 $("wipeConfirm").addEventListener("input", () => {
   $("wipeBtn").disabled = $("wipeConfirm").value.trim() !== "RENSA ALLT";
 });
 
 $("wipe").addEventListener("submit", async (ev) => {
   ev.preventDefault();
-  if (!confirm("Rensa ALLA bilder, timelapses och sparad vägtemperatur? Det går inte att ångra.")) return;
-  $("wipeResult").textContent = "Rensar…";
+  const ok = await confirmDialog({
+    title: "Rensa allt?", danger: true, confirmText: "Rensa allt",
+    body: "Alla bilder, klipp, sparad vägtemperatur och jobbhistorik tas bort för alla kameror.\n\nDet går inte att ångra.",
+  });
+  if (!ok) return;
+  $("wipeBtn").disabled = true;
   try {
     const r = await api("api/admin/wipe", { method: "POST", body: { confirm: $("wipeConfirm").value } });
-    $("wipeResult").textContent = `Klart: ${r.files} filer och ${r.timelapses} timelapses borttagna, ${fmtBytes(r.bytes)} frigjort.`;
+    toast(`Allt rensat: ${doneText(r)}`, "ok");
     $("wipeConfirm").value = "";
-    $("wipeBtn").disabled = true;
-    await loadStorage();
-    loadStatus();
-  } catch (e) { $("wipeResult").textContent = `Kunde inte rensa: ${e.message}`; }
-});
-
-async function save(body) {
-  $("save").disabled = true;
-  $("saveResult").textContent = "Sparar…";
-  try {
-    data = await api("api/admin/settings", { method: "PUT", body });
-    render();
-    const n = data.changed.length;
-    $("saveResult").textContent = (n ? `Sparat (${n} ändrade). ` : "Inget ändrades. ") + data.applied.join(" ");
+    storageData = null;
     loadStatus();
   } catch (e) {
-    $("saveResult").textContent = `Kunde inte spara: ${e.message}`;
+    toast(`Kunde inte rensa: ${e.message}`, "error");
+    $("wipeBtn").disabled = false;
+  }
+});
+
+/* ---- Inställningar ---- */
+const GROUP_META = {
+  cameras: ["🎥", "Standardval för alla kameror. Varje kamera kan välja något annat på sin egen sida."],
+  collect: ["📥", "Hur ofta bilder och vägtemperatur hämtas från Trafikverket."],
+  retention: ["🗄️", "Hur länge bilder sparas och när den dagliga rensningen körs."],
+  encoding: ["🎞️", "Hur timelapses kodas till MP4 och GIF."],
+};
+// Display order within the cards. nightly_minute is shown in the same row as nightly_hour.
+const ORDER = ["trv_fullsize", "temp_overlay_default", "collect_interval_minutes", "temp_collect_interval_minutes",
+  "temp_station_max_km", "snapshot_retention_days", "archive_retention_days", "nightly_hour", "hwaccel",
+  "max_concurrent_jobs", "output_fps", "gif_width", "gif_fps", "gif_max_frames"];
+const SUBHEADS = { hwaccel: "Video", gif_width: "GIF" };
+const PAIR = { nightly_hour: "nightly_minute" };
+const rowKey = (key) => (key === "nightly_minute" ? "nightly_hour" : key);
+const field = (key) => data.fields.find((f) => f.key === key);
+
+const isSwitch = (f) => f.kind === "bool" && f.choices.some((c) => c.label === "På");
+const isSegment = (f) => !isSwitch(f) && f.choices.length > 0 && f.choices.length <= 3;
+
+function fmtValue(f, v) {
+  if (f.choices.length) {
+    const c = f.choices.find((x) => x.value === String(v));
+    return c ? c.label : String(v);
+  }
+  return `${String(v).replace(".", ",")}${f.unit ? ` ${f.unit}` : ""}`;
+}
+
+function numberInput(f, cls = "") {
+  const step = f.kind === "float" ? "0.5" : "1";
+  return `<input id="f_${f.key}" class="${cls}" type="number" inputmode="${f.kind === "float" ? "decimal" : "numeric"}"
+    step="${step}" min="${f.min ?? ""}" max="${f.max ?? ""}" value="${esc(f.value)}" required>`;
+}
+
+function controlFor(f) {
+  const id = `f_${f.key}`;
+  if (isSwitch(f)) {
+    return `<label class="switch big"><input type="checkbox" id="${id}" ${f.value ? "checked" : ""}
+      aria-labelledby="l_${f.key}"><span class="slider"></span><span class="switch-text">${f.value ? "På" : "Av"}</span></label>`;
+  }
+  if (isSegment(f)) {
+    return `<div class="seg" role="radiogroup" aria-labelledby="l_${f.key}">${f.choices.map((c) => `
+      <label><input type="radio" name="${id}" value="${esc(c.value)}"${c.value === String(f.value) ? " checked" : ""}>
+        <span>${esc(c.label)}</span></label>`).join("")}</div>`;
+  }
+  if (f.choices.length) {
+    return `<select id="${id}" aria-labelledby="l_${f.key}">${f.choices.map((c) =>
+      `<option value="${esc(c.value)}"${c.value === String(f.value) ? " selected" : ""}>${esc(c.label)}</option>`).join("")}</select>`;
+  }
+  return `<span class="input-unit">${numberInput(f)}<span>${esc(f.unit)}</span></span>`;
+}
+
+function rowFor(f) {
+  const pair = PAIR[f.key] && field(PAIR[f.key]);
+  const saved = f.saved || (pair && pair.saved);
+  const label = pair ? "Daglig rensning kl." : f.label;
+  const control = pair
+    ? `<span class="time-input">${numberInput(f)}<span>:</span>${numberInput(pair)}<span class="pad"></span></span>`
+    : controlFor(f);
+  const envText = pair
+    ? `${String(f.env_default).padStart(2, "0")}:${String(pair.env_default).padStart(2, "0")}`
+    : fmtValue(f, f.env_default);
+  const resetKeys = pair ? `${f.key},${pair.key}` : f.key;
+  return `
+    <div class="setting-row" data-row="${f.key}">
+      <div class="setting-text">
+        <span class="setting-label" id="l_${f.key}">${esc(label)}${saved ? ' <span class="badge info">Ändrad i admin</span>' : ""}</span>
+        ${f.help ? `<p class="muted">${esc(f.help)}</p>` : ""}
+        ${saved ? `<p class="setting-meta">Standard från .env: ${esc(envText)} ·
+          <button type="button" class="linklike" data-reset="${resetKeys}">Återställ</button></p>` : ""}
+      </div>
+      <div class="setting-control">${control}</div>
+    </div>`;
+}
+
+function renderSettings(pending = {}) {
+  const i = data.info;
+  $("groups").innerHTML = data.groups.map((g) => {
+    const [icon, desc] = GROUP_META[g.key] || ["", ""];
+    const fields = data.fields.filter((f) => f.group === g.key && f.key !== "nightly_minute")
+      .sort((a, b) => ORDER.indexOf(a.key) - ORDER.indexOf(b.key));
+    const note = g.key === "cameras"
+      ? `<p class="card-note">${i.cameras_enabled} aktiva kameror, varav ${i.cameras_enabled_hd} sparar högupplöst ·
+          ${i.cameras_with_hd} av ${i.cameras_checked} kontrollerade kameror har högupplösta bilder.</p>` : "";
+    return `<section class="card settings-card" aria-labelledby="g_${g.key}">
+      <header class="settings-head">
+        <h2 id="g_${g.key}"><span aria-hidden="true">${icon}</span> ${esc(g.label)}</h2>
+        <p class="muted">${esc(desc)}</p>${note}
+      </header>
+      ${fields.map((f) => (SUBHEADS[f.key] ? `<h3 class="subhead">${SUBHEADS[f.key]}</h3>` : "") + rowFor(f)).join("")}
+    </section>`;
+  }).join("");
+  for (const [key, v] of Object.entries(pending)) setInput(field(key), v);
+  updateDirty();
+}
+
+function readValue(f) {
+  if (isSwitch(f)) return $(`f_${f.key}`).checked;
+  const raw = isSegment(f)
+    ? document.querySelector(`input[name="f_${f.key}"]:checked`)?.value
+    : $(`f_${f.key}`).value;
+  if (f.kind === "int" || f.kind === "float") return raw === "" ? NaN : Number(raw);
+  if (f.kind === "bool") return raw === "true";
+  return raw;
+}
+
+function setInput(f, v) {
+  if (!f) return;
+  if (isSwitch(f)) {
+    $(`f_${f.key}`).checked = v === true;
+  } else if (isSegment(f)) {
+    const r = document.querySelector(`input[name="f_${f.key}"][value="${CSS.escape(String(v))}"]`);
+    if (r) r.checked = true;
+  } else {
+    $(`f_${f.key}`).value = Number.isNaN(v) ? "" : v;
+  }
+}
+
+const dirtyFields = () => (data ? data.fields.filter((f) => readValue(f) !== f.value) : []);
+const pendingValues = (except = []) => Object.fromEntries(dirtyFields()
+  .filter((f) => !except.includes(f.key)).map((f) => [f.key, readValue(f)]));
+
+function updateDirty() {
+  const dirty = new Set(dirtyFields().map((f) => rowKey(f.key)));
+  document.querySelectorAll("[data-row]").forEach((row) => {
+    row.classList.toggle("dirty", dirty.has(row.dataset.row));
+    row.classList.toggle("invalid", [...row.querySelectorAll("input[type=number]")].some((el) => !el.checkValidity()));
+  });
+  document.querySelectorAll(".switch-text").forEach((t) => {
+    t.textContent = t.parentElement.querySelector("input").checked ? "På" : "Av";
+  });
+  const n = dirtyFields().length;
+  $("savebar").hidden = !n;
+  $("dirtyCount").textContent = plural(n, "osparad ändring", "osparade ändringar");
+}
+
+$("groups").addEventListener("input", updateDirty);
+$("groups").addEventListener("change", updateDirty);
+
+async function save(body, pending = {}) {
+  $("save").disabled = true;
+  try {
+    data = await api("api/admin/settings", { method: "PUT", body });
+    renderSettings(pending);
+    const n = data.changed.length;
+    toast((n ? `Sparat: ${plural(n, "inställning", "inställningar")} ändrade. ` : "Inget ändrades. ") +
+      data.applied.join(" "), "ok");
+    loadStatus();
+    return true;
+  } catch (e) {
+    toast(`Kunde inte spara: ${e.message}`, "error");
+    return false;
   } finally {
     $("save").disabled = false;
   }
 }
 
-$("settings").addEventListener("submit", (ev) => {
-  ev.preventDefault();
-  const values = {};
-  for (const f of data.fields) {
-    const el = $(`f_${f.key}`);
-    const v = f.kind === "int" ? parseInt(el.value, 10) : f.kind === "float" ? parseFloat(el.value) :
-      f.kind === "bool" ? el.value === "true" : el.value;
-    if (v !== f.value) values[f.key] = v;
-  }
-  save({ values });
-});
+const saveDirty = () => save({ values: pendingValues() });
 
+$("settings").addEventListener("submit", (ev) => { ev.preventDefault(); saveDirty(); });
+$("undo").addEventListener("click", () => renderSettings());
 $("groups").addEventListener("click", (ev) => {
   const b = ev.target.closest("[data-reset]");
-  if (b) save({ reset: [b.dataset.reset] });
+  if (!b) return;
+  const keys = b.dataset.reset.split(",");
+  save({ reset: keys }, pendingValues(keys)); // keep the other unsaved changes
 });
+window.addEventListener("beforeunload", (ev) => {
+  if (dirtyFields().length) { ev.preventDefault(); ev.returnValue = ""; }
+});
+
+/* ---- Login ---- */
+async function showApp() {
+  data = await api("api/admin/settings");
+  $("gate").hidden = true;
+  $("shell").hidden = false;
+  renderSettings();
+  showView(viewFromHash());
+  setInterval(() => { if (currentView === "oversikt" && !document.hidden) renderOverview(); }, 60000);
+}
 
 $("login").addEventListener("submit", async (ev) => {
   ev.preventDefault();
@@ -487,13 +817,18 @@ $("login").addEventListener("submit", async (ev) => {
   try {
     await api("api/admin/login", { method: "POST", body: { password: $("password").value } });
     $("password").value = "";
-    await showSettings();
+    await showApp();
   } catch (e) {
     $("loginError").textContent = e.message;
   }
 });
 
 $("logout").addEventListener("click", async () => {
+  if (dirtyFields().length && !await confirmDialog({
+    title: "Logga ut?", body: "Du har osparade ändringar i inställningarna. De försvinner om du loggar ut.",
+    confirmText: "Logga ut",
+  })) return;
+  data = null; // no beforeunload warning
   await api("api/admin/logout", { method: "POST" });
   location.reload();
 });
@@ -502,6 +837,6 @@ $("logout").addEventListener("click", async () => {
   loadStatus();
   const s = await api("api/admin/session");
   if (!s.enabled) { $("disabled").hidden = false; return; }
-  if (s.logged_in) await showSettings();
+  if (s.logged_in) await showApp();
   else { $("login").hidden = false; $("password").focus(); }
 })();

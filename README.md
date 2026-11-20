@@ -79,24 +79,35 @@ Timelapses skapas bara när någon trycker på **Generera**. Det finns ingen aut
   - **Övrigt:** välj MP4, GIF eller båda, längd (10, 30, 60 eller 120 s) och temperaturgraf (standard, på, av).
   - **Bibliotek:** klippet hamnar i kamerans bibliotek, där det kan spelas upp och laddas ner. Alla kan ta bort klippets MP4, GIF eller hela klippet, eftersom det går att generera igen. Bilder tas bara bort i admin.
 - **Ett län eller hela Sverige** (admin-sidan, kräver inloggning):
-  - Sektionen **Generera för län eller hela Sverige** har samma genereringsruta och ett val av urval.
+  - Avsnittet **Generera** i admin har samma genereringsruta och ett val av urval.
   - Varje aktiv kamera som har bilder i tidsspannet får ett eget klipp, och kameror utan bilder hoppas över.
-  - Förloppet visas under rutan. En körning får omfatta högst 500 kameror.
+  - Förloppet visas som en stapel under rutan, och en notis visas när körningen är klar. En körning får omfatta högst 500 kameror.
 - **Bilder:** bilderna fördelas jämnt över spannet. För dagar äldre än bildernas retention (90 dagar) används årsarkivet, med en bild per timme. Spannet kan därför vara upp till 365 dagar långt.
 - **Från tidigare versioner:** klipp som skapades av nattkörningen i 0.1.0–0.1.5 flyttas automatiskt in i biblioteket.
 
 ## Admin
 
-Admin-sidan (`⚙ Admin` i toppraden) samlar de globala inställningarna:
-- standard för bildupplösning och temperaturgraf
-- hämtningsintervall
-- tid för den dagliga rensningen (retention)
-- retention
-- hårdvaruacceleration och antal samtidiga jobb
-- video- och GIF-inställningar
-- avstånd till vägväderstation
+Admin-sidan (`⚙ Admin` i toppraden) har en sidomeny med fem avsnitt. På mobil blir menyn flikar. Adressen följer avsnittet (till exempel `admin.html#lagring`), så att länkar och bakåtknappen fungerar.
 
-Ändringarna sparas i databasen och gäller direkt. Schemat uppdateras, en ändrad hårdvaruacceleration gör en ny GPU-kontroll, och antalet jobb ändras när pågående jobb är klara. Värdena i `.env` används som standard tills de ändras i admin, och varje inställning kan återställas till `.env`-värdet.
+| Avsnitt | Innehåll |
+|---------|----------|
+| **Översikt** | Startsidan, som uppdateras varje minut. Visar aktiva kameror, lagring och disk (med en uppskattning vid full retention), videokodare/GPU, jobbkö, nästa schemalagda körningar och de senaste genereringarna. Varningar visas för saknad `TRV_API_KEY`, lite diskutrymme, en disk som inte räcker vid full retention, misslyckade genereringar och inga aktiva kameror. |
+| **Generera** | Klipp för ett län eller hela Sverige (se ovan). |
+| **Lagring** | Lagring per kamera, kameravyn och "Ta bort allt som är äldre än" (se nedan). |
+| **Inställningar** | De globala inställningarna i fyra kort. |
+| **Underhåll** | Rensa allt och börja om. |
+
+Inställningarna är uppdelade i fyra kort:
+- **Kameror:** standard för bildupplösning och temperaturgraf.
+- **Insamling:** hur ofta bilder och vägtemperatur hämtas, och avstånd till vägväderstation.
+- **Lagring och rensning:** retention och tid för den dagliga rensningen.
+- **Video och GIF:** hårdvaruacceleration, samtidiga jobb och video- och GIF-inställningar.
+
+När något ändras markeras raden, och en list längst ner visar antalet osparade ändringar med knapparna **Ångra** och **Spara**. Lämnar du sidan eller avsnittet med osparade ändringar får du en fråga. Inställningar som har ändrats i admin märks "Ändrad i admin" och kan återställas till `.env`-värdet.
+
+Allt som tar bort data frågar först i en dialog som sammanfattar vad som tas bort. Resultatet visas som en notis.
+
+Ändringarna sparas i databasen och gäller direkt. Schemat uppdateras, en ändrad hårdvaruacceleration gör en ny GPU-kontroll, och antalet jobb ändras när pågående jobb är klara. Värdena i `.env` används som standard tills de ändras i admin.
 
 Admin kräver ett lösenord:
 
@@ -108,20 +119,20 @@ Utan `ADMIN_PASSWORD` är admin-sidan avstängd. Inloggningen gäller i 7 dagar 
 
 ### Rensa och ta bort data
 
-Under **Lagring och rensning** på admin-sidan finns tre verktyg:
+Avsnitten **Lagring** och **Underhåll** på admin-sidan har de här verktygen:
 
 - **Ta bort allt som är äldre än:**
   - Välj ett datum, eller snabbvalen 7, 30 eller 90 dagar.
   - Välj bilder, timelapses eller båda, och alla kameror eller en kamera.
-  - En förhandsräkning visar hur mycket som tas bort innan du bekräftar.
+  - En förhandsräkning visar hur mycket som tas bort, och en dialog frågar innan något tas bort.
   - Bilder räknas per dag, och klipp efter när de skapades.
 - **Lagring per kamera:** en sammanfattning och en sökbar, sorterbar tabell (störst, flest bilder, äldst, flest klipp eller namn) med bilder, dagar, storlek och klipp per kamera.
-- **Kameravy:** klicka på en kamera i tabellen.
+- **Kameravy:** klicka på en kamera i tabellen. Vyn ersätter tabellen, och "← Alla kameror med data" leder tillbaka.
   - **Kalender:** dagar är färgade efter mängden bilder, ljusblå för dagar som bara har timbilder.
   - **Markering:** ett klick markerar en dag, och skift-klick ett intervall. Summan av bilder och storlek visas.
   - **Miniatyrer:** "Visa bilder" visar miniatyrerna för dagen. Ett klick förstorar bilden, och där kan den tas bort.
   - **Knappar:** ta bort markerade dagar, bilder äldre än ett datum, alla bilder eller alla klipp.
-- **Rensa allt och börja om:** tar bort alla bilder, timelapses, sparad vägtemperatur och jobbhistorik.
+- **Rensa allt och börja om** (Underhåll): tar bort alla bilder, timelapses, sparad vägtemperatur och jobbhistorik.
   - Aktiva kameror, valen per kamera och inställningarna ligger kvar, så insamlingen fortsätter vid nästa hämtning.
   - Knappen fungerar först när du skriver `RENSA ALLT`.
 
