@@ -11,6 +11,8 @@ import asyncio
 import logging
 import os
 import tempfile
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -158,6 +160,62 @@ def has_images_in_range(settings: Settings, camera_id: str, start: datetime, end
     return False
 
 
+class Slots:
+    """Async limiter whose size can change while it runs (read from `limit` on every wait)."""
+
+    def __init__(self, limit: Callable[[], int]) -> None:
+        self._limit = limit
+        self._used = 0
+        self._cond = asyncio.Condition()
+
+    @property
+    def used(self) -> int:
+        return self._used
+
+    @asynccontextmanager
+    async def __call__(self) -> AsyncIterator[None]:
+        async with self._cond:
+            await self._cond.wait_for(lambda: self._used < max(1, self._limit()))
+            self._used += 1
+        try:
+            yield
+        finally:
+            async with self._cond:
+                self._used -= 1
+                self._cond.notify_all()
+
+
+async def encode_mp4(
+    settings: Settings,
+    encoder: Encoder,
+    enc: ffmpeg.EncoderChoice,
+    cmd: Callable[[ffmpeg.EncoderChoice], list[str]],
+) -> ffmpeg.EncoderChoice:
+    """Run the MP4 encode and return the encoder that was used.
+
+    Hardware encodes wait for a GPU slot. When one fails, this clip is encoded on the CPU, and
+    the shared encoder only switches to the CPU for good when a fresh test encode fails too.
+    A single failure can be a busy GPU (too many sessions), not a broken one.
+    """
+    if enc.mode == "cpu":
+        await ffmpeg.run(cmd(enc))
+        return enc
+    try:
+        async with encoder.gpu_slot():
+            await ffmpeg.run(cmd(enc))
+        return enc
+    except RuntimeError as e:
+        log.warning("%s encoding failed (%s), encoding this clip on the CPU", enc.codec, e)
+        async with encoder.gpu_slot():
+            works = await asyncio.to_thread(ffmpeg.encoder_works, enc.mode, settings.vaapi_device)
+        if not works:
+            log.warning("%s test encode failed too, using the CPU from now on", enc.codec)
+            encoder.downgrade()
+    cpu = ffmpeg.EncoderChoice("cpu", "libx264")
+    await ffmpeg.run(cmd(cpu))
+    return cpu
+
+
 class Encoder:
     """Lazily detected encoder, shared by all jobs."""
 
@@ -165,6 +223,9 @@ class Encoder:
         self.settings = settings
         self._choice: ffmpeg.EncoderChoice | None = None
         self.gpus: list[str] | None = None
+        # GeForce cards allow only a few NVENC sessions at a time, so hardware encodes are
+        # limited separately from the job workers (frame selection, graphs and GIFs run on CPU).
+        self.gpu_slot = Slots(lambda: settings.max_gpu_encodes)
 
     @property
     def choice(self) -> ffmpeg.EncoderChoice:
@@ -295,15 +356,7 @@ async def generate_clip(settings: Settings, encoder: Encoder, camera_id: str, re
                     overlay=mp4_ov, overlay_margin=mp4_margin,
                 )  # fmt: skip
 
-            try:
-                await ffmpeg.run(mp4_cmd(enc))
-            except RuntimeError as e:
-                if enc.mode == "cpu":
-                    raise
-                log.warning("%s encoding failed (%s), retrying on CPU", enc.codec, e)
-                encoder.downgrade()
-                enc = encoder.choice
-                await ffmpeg.run(mp4_cmd(enc))
+            enc = await encode_mp4(settings, encoder, enc, mp4_cmd)
 
         if want_gif:
             gif_list = tmpd / "gif.ffconcat"
@@ -433,7 +486,7 @@ class JobQueue:
         """One clip per enabled camera in the county (or all of Sweden) that has images in
         the range. Returns the batch and the names of the cameras that were skipped."""
         if scope not in ("county", "all"):
-            raise RequestError("Välj län eller hela Sverige")
+            raise RequestError("Välj ett län eller alla aktiva kameror")
         if scope == "county" and county_no is None:
             raise RequestError("Välj ett län")
         with session_scope() as s:

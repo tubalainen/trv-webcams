@@ -70,13 +70,13 @@ docker compose up -d</pre>
       <section data-view="generera" aria-labelledby="h-generera" hidden>
         <header class="view-head">
           <h1 id="h-generera">Generera</h1>
-          <p class="muted">Skapa klipp för alla aktiva kameror i ett län eller i hela Sverige. Ett klipp görs per
+          <p class="muted">Skapa klipp för alla aktiva kameror, eller för de aktiva i ett län. Ett klipp görs per
             kamera som har bilder i tidsspannet och hamnar i kamerans bibliotek. Enskilda kameror genereras
             på kamerasidan.</p>
         </header>
         <div class="card">
           <label class="field batch-scope"><span>Urval</span>
-            <select id="batchScope"><option value="">Hela Sverige</option></select></label>
+            <select id="batchScope"><option value="">Alla aktiva kameror</option></select></label>
           <div id="batchGenerator"></div>
           <div id="batchProgressWrap" class="progress-wrap" hidden>
             <div class="bar"><i id="batchBar"></i></div>

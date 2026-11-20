@@ -46,7 +46,8 @@ class Settings(BaseSettings):
     # Encoding
     hwaccel: str = "auto"  # auto | nvidia | vaapi | qsv | cpu
     vaapi_device: str = "/dev/dri/renderD128"
-    max_concurrent_jobs: int = 2
+    max_concurrent_jobs: int = 4
+    max_gpu_encodes: int = 3  # concurrent NVENC/VAAPI/QSV encodes (GeForce cards limit sessions)
     output_fps: int = 30
     gif_width: int = 480
     gif_fps: int = 10

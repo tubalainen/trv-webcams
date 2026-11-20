@@ -177,6 +177,8 @@ async def apply_changes(app, changed: dict[str, tuple[Any, Any]]) -> list[str]:
     if "max_concurrent_jobs" in changed:
         jobs.resize(settings.max_concurrent_jobs)
         notes.append(f"{settings.max_concurrent_jobs} jobb kan köras samtidigt.")
+    if "max_gpu_encodes" in changed:
+        notes.append(f"Högst {settings.max_gpu_encodes} GPU-kodningar åt gången.")
     if "temp_station_max_km" in changed:
         linked = await asyncio.to_thread(weather.assign_stations, settings)
         notes.append(f"{linked} kameror har en vägväderstation inom {settings.temp_station_max_km:g} km.")

@@ -390,7 +390,7 @@ def batch_dict(b: Batch) -> dict:
         "id": b.id,
         "scope": b.scope,
         "county_no": b.county_no,
-        "county": COUNTIES.get(b.county_no or 0, "") if b.scope == "county" else "Hela Sverige",
+        "county": COUNTIES.get(b.county_no or 0, "") if b.scope == "county" else "Alla aktiva kameror",
         "range_start": _iso(b.range_start),
         "range_end": _iso(b.range_end),
         "formats": b.formats.split(","),

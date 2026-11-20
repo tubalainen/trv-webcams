@@ -114,7 +114,25 @@ FIELDS: list[Field] = [
         ),
     ),
     Field(
-        "max_concurrent_jobs", "Samtidiga jobb", "encoding", "int", "Antal timelapse-jobb åt gången.", 1, 8
+        "max_concurrent_jobs",
+        "Samtidiga jobb",
+        "encoding",
+        "int",
+        "Antal klipp som görs samtidigt. Det gör generering för många kameror snabbare, men belastar "
+        "CPU och disk mer.",
+        1,
+        16,
+    ),
+    Field(
+        "max_gpu_encodes",
+        "Samtidiga GPU-kodningar",
+        "encoding",
+        "int",
+        "Högst så många jobb kodar MP4 på GPU:n samtidigt, medan de andra förbereder bilder och GIF. "
+        "GeForce-kort tillåter ett begränsat antal samtidiga NVENC-kodningar (8 med nyare drivrutiner, "
+        "3–5 med äldre).",
+        1,
+        8,
     ),
     Field("output_fps", "Bilder per sekund i video", "encoding", "int", "", 5, 60, unit="fps"),
     Field("gif_width", "GIF-bredd", "encoding", "int", "", 160, 1280, unit="px"),

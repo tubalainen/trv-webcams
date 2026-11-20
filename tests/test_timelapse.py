@@ -240,3 +240,45 @@ async def test_old_period_jobs_are_retired_on_start(settings):
         assert j.status == "failed" and "begäran" in j.message
     assert q.queue.empty()
     await q.stop()
+
+
+async def test_gpu_slots_limit_concurrency(settings):
+    import asyncio
+
+    settings.max_gpu_encodes = 2
+    slots = timelapse.Slots(lambda: settings.max_gpu_encodes)
+    peak = 0
+
+    async def job():
+        nonlocal peak
+        async with slots():
+            peak = max(peak, slots.used)
+            await asyncio.sleep(0.01)
+
+    await asyncio.gather(*(job() for _ in range(8)))
+    assert peak == 2 and slots.used == 0
+
+
+async def test_gpu_failure_falls_back_for_this_clip_only(settings, monkeypatch):
+    from app import ffmpeg
+
+    enc = Encoder(settings)
+    enc._choice = ffmpeg.EncoderChoice("nvidia", "h264_nvenc")
+    ran = []
+
+    async def fake_run(cmd, timeout=3600):
+        ran.append(cmd[0])
+        if cmd[0] == "h264_nvenc":
+            raise RuntimeError("OpenEncodeSessionEx failed: out of memory")
+
+    monkeypatch.setattr(ffmpeg, "run", fake_run)
+    # The GPU is only busy: the test encode works, so later clips still use the GPU
+    monkeypatch.setattr(ffmpeg, "encoder_works", lambda mode, dev: True)
+    used = await timelapse.encode_mp4(settings, enc, enc.choice, lambda e: [e.codec])
+    assert used.mode == "cpu" and ran == ["h264_nvenc", "libx264"]
+    assert enc.choice.mode == "nvidia"
+
+    # The GPU is broken: switch to the CPU for good
+    monkeypatch.setattr(ffmpeg, "encoder_works", lambda mode, dev: False)
+    await timelapse.encode_mp4(settings, enc, enc.choice, lambda e: [e.codec])
+    assert enc.choice.mode == "cpu"

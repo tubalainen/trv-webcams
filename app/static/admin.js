@@ -171,7 +171,7 @@ async function renderOverview() {
       <span class="badge ${cls}">${label}</span>
       <span class="job-main"><a href="camera.html?id=${encodeURIComponent(j.camera_id)}">${esc(camName(j.camera_id))}</a>
         <span class="muted">${fmtTime(j.range_start)} – ${fmtTime(j.range_end)} · ${esc(j.formats.join(", ").toUpperCase())}
-          ${j.batch_id ? " · län/Sverige" : ""}</span>
+          ${j.batch_id ? " · län/alla aktiva" : ""}</span>
         ${j.status === "failed" && j.message ? `<span class="muted warn">${esc(j.message)}</span>` : ""}</span>
       <span class="muted job-time">${fmtTime(j.created_at)}</span></li>`;
   }).join("") : '<li class="muted">Inga genereringar ännu.</li>';
@@ -185,8 +185,8 @@ let counties = {};
 function batchScope() {
   const county = $("batchScope").value;
   return county
-    ? { scope: "county", county_no: Number(county), label: `${counties[county]} län` }
-    : { scope: "all", county_no: null, label: "hela Sverige" };
+    ? { scope: "county", county_no: Number(county), label: `aktiva i ${counties[county]}` }
+    : { scope: "all", county_no: null, label: "alla aktiva kameror" };
 }
 
 const enabledInScope = () => {
@@ -211,18 +211,36 @@ async function pollBatch(id) {
   } catch (_) { /* batch removed */ }
 }
 
+// Only active cameras are generated, so the choices show how many are active. Counties without
+// active cameras are listed last and disabled.
+function renderBatchScope() {
+  const sel = $("batchScope");
+  const cur = sel.value;
+  const active = {};
+  for (const c of allCams) if (c.enabled) active[c.county_no] = (active[c.county_no] || 0) + 1;
+  const total = Object.values(active).reduce((a, n) => a + n, 0);
+  const sorted = Object.entries(counties).sort((a, b) => a[1].localeCompare(b[1], "sv"));
+  const opt = ([no, name], n) =>
+    `<option value="${no}"${n ? "" : " disabled"}>${esc(name)}${n ? ` (${n} aktiva)` : ""}</option>`;
+  const withCams = sorted.filter(([no]) => active[no]);
+  const without = sorted.filter(([no]) => !active[no]);
+  sel.innerHTML = `<option value="">Alla aktiva kameror (${total})</option>` +
+    (withCams.length ? `<optgroup label="Län">${withCams.map((c) => opt(c, active[c[0]])).join("")}</optgroup>` : "") +
+    (without.length ? `<optgroup label="Inga aktiva kameror">${without.map((c) => opt(c, 0)).join("")}</optgroup>` : "");
+  sel.value = active[cur] ? cur : "";
+}
+
 async function setupBatch() {
-  if (batchGen) { loadCams(); return; }
+  if (batchGen) { await loadCams(); renderBatchScope(); return; }
   [counties] = await Promise.all([api("api/counties"), loadCams()]);
-  $("batchScope").innerHTML = `<option value="">Hela Sverige</option>` + Object.entries(counties)
-    .sort((a, b) => a[1].localeCompare(b[1], "sv"))
-    .map(([no, name]) => `<option value="${no}">${esc(name)}</option>`).join("");
+  renderBatchScope();
   batchGen = await createGenerator($("batchGenerator"), {
     availabilityUrl: () => {
       const sc = batchScope();
       return sc.scope === "county" ? `api/availability?county=${sc.county_no}` : "api/availability";
     },
-    scopeText: () => `${batchScope().label}, ${enabledInScope()} aktiva kameror`,
+    scopeText: () => (batchScope().scope === "all"
+      ? `alla aktiva kameror (${enabledInScope()})` : `${enabledInScope()} ${batchScope().label}`),
     submit: async (body) => {
       const sc = batchScope();
       const b = await api("api/admin/batches", { method: "POST", body: { ...body, scope: sc.scope, county_no: sc.county_no } });
@@ -641,7 +659,7 @@ const GROUP_META = {
 // Display order within the cards. nightly_minute is shown in the same row as nightly_hour.
 const ORDER = ["trv_fullsize", "temp_overlay_default", "collect_interval_minutes", "temp_collect_interval_minutes",
   "temp_station_max_km", "snapshot_retention_days", "archive_retention_days", "nightly_hour", "hwaccel",
-  "max_concurrent_jobs", "output_fps", "gif_width", "gif_fps", "gif_max_frames"];
+  "max_concurrent_jobs", "max_gpu_encodes", "output_fps", "gif_width", "gif_fps", "gif_max_frames"];
 const SUBHEADS = { hwaccel: "Video", gif_width: "GIF" };
 const PAIR = { nightly_hour: "nightly_minute" };
 const rowKey = (key) => (key === "nightly_minute" ? "nightly_hour" : key);

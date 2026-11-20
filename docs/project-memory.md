@@ -7,6 +7,8 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 | Version | Datum | Issue | PR | Ändring |
 |---------|-------|-------|----|---------|
+| 0.1.10 | 2026-11-20 | #27 | #28 | Fler parallella genereringar: "Samtidiga jobb" upp till 16 (standard 4), ny gräns "Samtidiga GPU-kodningar" (standard 3), ett misslyckat GPU-försök kodar bara det klippet på CPU |
+| 0.1.10 | 2026-11-20 | #26 | #28 | Generera: "Hela Sverige" heter "Alla aktiva kameror", och urvalet visar antal aktiva per län (län utan aktiva är spärrade) |
 | 0.1.9 | 2026-11-20 | #24 | #25 | Ny layout för admin: sidomeny (flikar på mobil) med Översikt, Generera, Lagring, Inställningar och Underhåll, översikt med varningar, inställningar i fyra kort med spara-list, egna dialoger och notiser |
 | 0.1.8 | 2026-11-19 | #22 | #23 | Bildradering bara i admin (sökbar tabell och kameravy med kalender och miniatyrer), klipp (MP4, GIF eller båda) raderbara för alla på kamerasidan, UI-filer med `no-cache`, "Endast aktiva" förvalt när kameror är aktiva, versionsnummer i toppraden |
 | 0.1.7 | 2026-11-19 | #20 | #21 | Generering för län och hela Sverige flyttad från översikten till admin, kalendern begränsad till dagar med sparade bilder |
@@ -35,10 +37,14 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
   `PUID:PGID` utan capabilities. `user:` i compose hoppar över det steget.
 - **GPU:** `HWACCEL=auto` provar NVENC → VAAPI → QSV → CPU med en riktig
   provkodning vid start. GIF görs alltid på CPU.
+- **Parallellitet (beslut 2026-11-20, 0.1.10):**
+  - **Jobb:** `max_concurrent_jobs` (1–16, standard 4) styr antalet jobb, och `max_gpu_encodes` (1–8, standard 3) styr bara själva MP4-kodningen på GPU:n (`Encoder.gpu_slot`, en `Slots`-begränsare som läser inställningen vid varje väntan). Bildurval, temperaturgraf per ruta och GIF körs på CPU i alla jobb samtidigt.
+  - **Varför:** användaren såg bara cirka 10 % GPU vid bulkgenerering, så CPU-arbetet var flaskhalsen. GeForce-kort begränsar antalet samtidiga NVENC-sessioner.
+  - **Fel på GPU:n:** misslyckas en GPU-kodning (`timelapse.encode_mp4`) görs bara det klippet om på CPU. Appen byter till CPU för gott (`Encoder.downgrade`) först när en ny provkodning också misslyckas. Tidigare räckte ett enda fel, vilket kunde flytta en hel bulkkörning till CPU.
 - **Ingen automatisk generering (beslut 2026-11-19, 0.1.6):**
   - Timelapses skapas bara när någon trycker på Generera. Den nattliga cron-tiden används nu bara för retention ("Daglig rensning").
   - Varje generering ger ett eget klipp (tabellen `clips`, filer `timelapses/{kamera}/{id}.mp4|gif`).
-  - Län och hela Sverige ger ett klipp per aktiv kamera med bilder i spannet (tabellen `batches`, max 500) och kräver admin. Sedan 0.1.7 görs det bara på admin-sidan, och översikten har ingen genereringsknapp (användarens önskan). En enskild kamera är öppen för alla (kamerasidan).
+  - Län och alla aktiva (förr "hela Sverige", bytt namn i 0.1.10 eftersom bara aktiva kameror ingår) ger ett klipp per aktiv kamera med bilder i spannet (tabellen `batches`, max 500) och kräver admin. Sedan 0.1.7 görs det bara på admin-sidan, och översikten har ingen genereringsknapp (användarens önskan). En enskild kamera är öppen för alla (kamerasidan).
   - Längden väljs (10/30/60/120 s), och bilderna väljs jämnt över spannet. Dagar utan snapshots tas från timarkivet.
   - Kalendern och förvalen (`generate.js`) går inte längre bak än den första sparade bilden (användarens önskan, 0.1.7). Utan bilder är rutan spärrad.
   - Gamla rader i `timelapses` migreras till `clips` vid start (`db._migrate_timelapses_to_clips`).

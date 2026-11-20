@@ -57,7 +57,7 @@ function renderJob(job) {
   if (!job) { el.textContent = ""; return; }
   const txt = { queued: "I kö…", running: "Genererar…", done: "Klart", failed: "Misslyckades",
     skipped: "Hoppades över" }[job.status] || job.status;
-  const how = { nightly: "automatisk (äldre)", batch: "län/hela Sverige" }[job.trigger] || "manuell";
+  const how = { nightly: "automatisk (äldre)", batch: "län/alla aktiva" }[job.trigger] || "manuell";
   el.className = `job-status ${job.status}`;
   el.innerHTML = `<b>Senaste generering: ${txt}</b> <span class="muted">(${how},
     ${fmtTime(job.finished_at || job.started_at || job.created_at)})</span>
