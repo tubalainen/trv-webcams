@@ -75,7 +75,7 @@ def test_admin_flow(admin_settings, monkeypatch):
         data = c.get("/api/admin/settings").json()
         fields = {f["key"]: f for f in data["fields"]}
         assert fields["trv_fullsize"]["value"] is False and "trv_api_key" not in fields
-        assert {g["key"] for g in data["groups"]} >= {"cameras", "collect", "encoding"}
+        assert {g["key"] for g in data["groups"]} == {"cameras", "collect", "retention", "encoding"}
 
         r = c.put(
             "/api/admin/settings", json={"values": {"max_concurrent_jobs": 3, "temp_station_max_km": 15}}

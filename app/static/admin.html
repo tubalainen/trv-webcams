@@ -7,171 +7,245 @@
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="admin-body">
   <header class="topbar">
     <a class="brand" href="./">← Alla kameror</a>
     <div id="status" class="status"></div>
-    <nav><button id="logout" class="btn small ghost" hidden>Logga ut</button></nav>
   </header>
 
-  <main class="admin-page">
-    <h1>Admin</h1>
-
-    <section id="disabled" class="card" hidden>
-      <h2>Admin är avstängt</h2>
+  <!-- Shown before login -->
+  <div id="gate" class="admin-gate">
+    <section id="disabled" class="card gate-card" hidden>
+      <h1>Admin är avstängt</h1>
       <p>Sätt <code>ADMIN_PASSWORD</code> i <code>.env</code> och starta om containern för att använda admin-sidan.</p>
       <pre>ADMIN_PASSWORD=ett-långt-lösenord
 docker compose up -d</pre>
     </section>
 
-    <form id="login" class="card login" hidden>
-      <h2>Logga in</h2>
+    <form id="login" class="card gate-card" hidden>
+      <h1>Logga in i admin</h1>
+      <p class="muted">Inställningar, generering för flera kameror, lagring och rensning.</p>
       <label class="field"><span>Lösenord</span>
         <input type="password" id="password" autocomplete="current-password" required></label>
       <button class="btn" type="submit">Logga in</button>
       <p class="warn" id="loginError" role="alert"></p>
     </form>
+  </div>
 
-    <form id="settings" hidden>
-      <p class="muted">Inställningarna gäller alla kameror och sparas i appens databas.
-        Värdena från <code>.env</code> används som standard tills du ändrar dem här.
-        Ändringar gäller direkt, utan omstart.</p>
-      <div id="info" class="admin-info"></div>
-      <div id="groups"></div>
-      <div class="admin-actions">
-        <button class="btn" type="submit" id="save">Spara</button>
-        <span id="saveResult" role="status"></span>
-      </div>
-    </form>
+  <div id="shell" class="admin-shell" hidden>
+    <nav class="admin-nav" aria-label="Admin">
+      <a href="#oversikt" data-nav="oversikt"><span class="ico" aria-hidden="true">📊</span>Översikt</a>
+      <a href="#generera" data-nav="generera"><span class="ico" aria-hidden="true">🎬</span>Generera</a>
+      <a href="#lagring" data-nav="lagring"><span class="ico" aria-hidden="true">💾</span>Lagring</a>
+      <a href="#installningar" data-nav="installningar"><span class="ico" aria-hidden="true">⚙️</span>Inställningar</a>
+      <a href="#underhall" data-nav="underhall"><span class="ico" aria-hidden="true">🧹</span>Underhåll</a>
+      <button type="button" id="logout" class="nav-logout"><span class="ico" aria-hidden="true">↪</span>Logga ut</button>
+    </nav>
 
-    <section id="batch" hidden>
-      <h2>Generera för län eller hela Sverige</h2>
-      <div class="card">
-        <p class="muted">Ett klipp per aktiv kamera som har bilder i tidsspannet. Klippen hamnar i varje
-          kameras bibliotek. Kameror utan bilder hoppas över.</p>
-        <label class="field batch-scope"><span>Urval</span>
-          <select id="batchScope"><option value="">Hela Sverige</option></select></label>
-        <div id="batchGenerator"></div>
-        <p id="batchProgress" class="muted" role="status"></p>
-      </div>
-    </section>
-
-    <section id="cleanup" hidden>
-      <h2>Lagring och rensning</h2>
-
-      <form id="purge" class="card">
-        <h3>Ta bort allt som är äldre än</h3>
-        <div class="purge-row">
-          <label class="field"><span>Datum</span><input type="date" id="purgeDate" required></label>
-          <span class="quick">
-            <button type="button" class="btn small ghost" data-days="7">7 dagar</button>
-            <button type="button" class="btn small ghost" data-days="30">30 dagar</button>
-            <button type="button" class="btn small ghost" data-days="90">90 dagar</button>
-          </span>
-        </div>
-        <div class="purge-row">
-          <label class="field"><span>Vad</span>
-            <select id="purgeWhat">
-              <option value="all">Bilder och timelapses</option>
-              <option value="images">Bara bilder</option>
-              <option value="timelapses">Bara timelapses</option>
-            </select></label>
-          <label class="field"><span>Kameror</span><select id="purgeCamera"></select></label>
-        </div>
-        <p class="muted" id="purgePreview"></p>
-        <button class="btn danger" type="submit">Ta bort</button>
-        <span id="purgeResult" role="status"></span>
-        <p class="muted small-note">Bilder räknas per dag, och timelapses (klipp) efter när de skapades.</p>
-      </form>
-
-      <div class="card">
-        <h3>Lagring per kamera</h3>
-        <p class="muted" id="storageSummary"></p>
-        <div class="storage-tools">
-          <input type="search" id="storageSearch" placeholder="Sök kamera…" aria-label="Sök kamera">
-          <label class="field inline"><span>Sortera</span>
-            <select id="storageSort">
-              <option value="size">Störst först</option>
-              <option value="images">Flest bilder</option>
-              <option value="oldest">Äldsta bilder först</option>
-              <option value="clips">Flest klipp</option>
-              <option value="name">Namn</option>
-            </select></label>
-        </div>
-        <div class="table-wrap"><table class="storage-table">
-          <thead><tr><th>Kamera</th><th>Bilder</th><th>Dagar</th><th>Storlek</th><th>Klipp</th></tr></thead>
-          <tbody id="storageRows"><tr><td colspan="5" class="muted">Laddar…</td></tr></tbody>
-        </table></div>
-        <p class="muted small-note">Klicka på en kamera för att se och ta bort dess bilder per dag.</p>
-      </div>
-
-      <div class="card cam-view" id="camView" hidden>
-        <div class="cam-view-head">
-          <h3 id="cvName"></h3>
-          <button type="button" class="btn small ghost" id="cvClose" aria-label="Stäng kameravyn">Stäng</button>
-        </div>
-        <p class="muted" id="cvMeta"></p>
-        <div class="cam-view-body">
-          <div class="cv-cal">
-            <div class="cal-head">
-              <button type="button" class="btn small ghost" id="cvPrev" aria-label="Föregående månad">‹</button>
-              <span class="cal-title" id="cvMonth"></span>
-              <button type="button" class="btn small ghost" id="cvNext" aria-label="Nästa månad">›</button>
-            </div>
-            <div class="cal-grid" id="cvGrid"></div>
-            <div class="cal-legend muted">
-              <span><i class="heat h1"></i> få</span><span><i class="heat h2"></i> fler</span>
-              <span><i class="heat h3"></i> många bilder</span><span><i class="heat ha"></i> bara timbilder</span>
-            </div>
-            <p class="muted small-note">Klicka för att markera dagar, skift-klick för ett intervall.</p>
+    <main class="admin-main">
+      <!-- Översikt -->
+      <section data-view="oversikt" aria-labelledby="h-oversikt">
+        <header class="view-head">
+          <h1 id="h-oversikt">Översikt</h1>
+          <p class="muted">Läget i appen just nu. Uppdateras varje minut.</p>
+        </header>
+        <div id="ovAlerts" class="alerts"></div>
+        <div id="ovStats" class="stat-grid"></div>
+        <div class="ov-cols">
+          <div class="card">
+            <h2>Nästa körningar</h2>
+            <dl id="ovRuns" class="kv"></dl>
           </div>
-          <div class="cv-side">
-            <p id="cvSelection" class="cv-selection">Inga dagar markerade.</p>
-            <div class="cv-actions">
-              <button type="button" class="btn small danger" id="cvDelDays" disabled>Ta bort markerade dagar</button>
-              <button type="button" class="btn small ghost" id="cvClear" disabled>Avmarkera</button>
+          <div class="card">
+            <div class="card-head">
+              <h2>Senaste genereringar</h2>
+              <a href="#generera" class="btn small ghost">Generera…</a>
             </div>
-            <div class="cv-actions">
-              <label class="field inline"><span>Äldre än</span><input type="date" id="cvBefore"></label>
-              <button type="button" class="btn small danger" id="cvDelBefore">Ta bort äldre bilder</button>
-            </div>
-            <div class="cv-actions">
-              <button type="button" class="btn small danger" id="cvDelAll">Ta bort alla bilder</button>
-              <button type="button" class="btn small danger" id="cvDelClips">Ta bort alla klipp</button>
-            </div>
-            <p class="muted" id="cvResult" role="status"></p>
+            <ul id="ovJobs" class="job-list"></ul>
           </div>
         </div>
-        <div class="cv-thumbs-head">
-          <h4 id="cvDayTitle"></h4>
-          <button type="button" class="btn small ghost" id="cvShow" hidden>Visa bilder</button>
-        </div>
-        <div class="cv-thumbs" id="cvThumbs"></div>
-        <button type="button" class="btn small ghost" id="cvMore" hidden>Visa fler</button>
-      </div>
+      </section>
 
-      <dialog id="cvImage" class="img-dialog">
-        <img id="cvImageEl" alt="">
-        <p class="muted" id="cvImageCap"></p>
-        <div class="cv-actions">
-          <button type="button" class="btn small danger" id="cvDelImage">Ta bort bilden</button>
-          <form method="dialog"><button class="btn small ghost">Stäng</button></form>
+      <!-- Generera -->
+      <section data-view="generera" aria-labelledby="h-generera" hidden>
+        <header class="view-head">
+          <h1 id="h-generera">Generera</h1>
+          <p class="muted">Skapa klipp för alla aktiva kameror i ett län eller i hela Sverige. Ett klipp görs per
+            kamera som har bilder i tidsspannet och hamnar i kamerans bibliotek. Enskilda kameror genereras
+            på kamerasidan.</p>
+        </header>
+        <div class="card">
+          <label class="field batch-scope"><span>Urval</span>
+            <select id="batchScope"><option value="">Hela Sverige</option></select></label>
+          <div id="batchGenerator"></div>
+          <div id="batchProgressWrap" class="progress-wrap" hidden>
+            <div class="bar"><i id="batchBar"></i></div>
+            <p id="batchProgress" class="muted" role="status"></p>
+          </div>
         </div>
-      </dialog>
+      </section>
 
-      <form id="wipe" class="card danger-zone">
-        <h3>Rensa allt och börja om</h3>
-        <p>Tar bort <b>alla bilder, timelapses, sparad vägtemperatur och jobbhistorik</b> för alla kameror.
-          Det går inte att ångra.</p>
-        <p class="muted">Behålls: vilka kameror som är aktiva, valen per kamera och inställningarna här.
-          Insamlingen fortsätter vid nästa hämtning.</p>
-        <label class="field"><span>Skriv <code>RENSA ALLT</code> för att bekräfta</span>
-          <input id="wipeConfirm" autocomplete="off" spellcheck="false"></label>
-        <button class="btn danger" type="submit" id="wipeBtn" disabled>Rensa allt</button>
-        <span id="wipeResult" role="status"></span>
-      </form>
-    </section>
-  </main>
+      <!-- Lagring -->
+      <section data-view="lagring" aria-labelledby="h-lagring" hidden>
+        <header class="view-head">
+          <h1 id="h-lagring">Lagring</h1>
+          <p class="muted">Se hur mycket varje kamera sparar och ta bort bilder och klipp.</p>
+        </header>
+        <div id="storageSummary" class="stat-grid compact"></div>
+
+        <div class="card" id="storageList">
+          <div class="card-head">
+            <h2>Per kamera</h2>
+          </div>
+          <div class="storage-tools">
+            <input type="search" id="storageSearch" placeholder="Sök kamera…" aria-label="Sök kamera">
+            <label class="field inline"><span>Sortera</span>
+              <select id="storageSort">
+                <option value="size">Störst först</option>
+                <option value="images">Flest bilder</option>
+                <option value="oldest">Äldsta bilder först</option>
+                <option value="clips">Flest klipp</option>
+                <option value="name">Namn</option>
+              </select></label>
+          </div>
+          <div class="table-wrap"><table class="storage-table">
+            <thead><tr><th>Kamera</th><th>Bilder</th><th>Dagar</th><th>Storlek</th><th>Klipp</th><th></th></tr></thead>
+            <tbody id="storageRows"><tr><td colspan="6" class="muted">Laddar…</td></tr></tbody>
+          </table></div>
+          <p class="muted small-note">Klicka på en kamera för att se och ta bort dess bilder dag för dag.</p>
+        </div>
+
+        <div class="card cam-view" id="camView" hidden>
+          <button type="button" class="btn small ghost back" id="cvClose">← Alla kameror med data</button>
+          <div class="cam-view-head">
+            <h2 id="cvName"></h2>
+            <p class="muted" id="cvMeta"></p>
+          </div>
+          <div class="cam-view-body">
+            <div class="cv-cal">
+              <div class="cal-head">
+                <button type="button" class="btn small ghost" id="cvPrev" aria-label="Föregående månad">‹</button>
+                <span class="cal-title" id="cvMonth"></span>
+                <button type="button" class="btn small ghost" id="cvNext" aria-label="Nästa månad">›</button>
+              </div>
+              <div class="cal-grid" id="cvGrid"></div>
+              <div class="cal-legend muted">
+                <span><i class="heat h1"></i> få</span><span><i class="heat h2"></i> fler</span>
+                <span><i class="heat h3"></i> många bilder</span><span><i class="heat ha"></i> bara timbilder</span>
+              </div>
+              <p class="muted small-note">Klicka för att markera dagar, skift-klick för ett intervall.</p>
+            </div>
+            <div class="cv-side">
+              <div class="cv-group">
+                <h3>Markerade dagar</h3>
+                <p id="cvSelection" class="cv-selection">Inga dagar markerade.</p>
+                <div class="cv-actions">
+                  <button type="button" class="btn small danger" id="cvDelDays" disabled>Ta bort markerade dagar</button>
+                  <button type="button" class="btn small ghost" id="cvClear" disabled>Avmarkera</button>
+                </div>
+              </div>
+              <div class="cv-group">
+                <h3>Äldre bilder</h3>
+                <div class="cv-actions">
+                  <label class="field inline"><span>Före</span><input type="date" id="cvBefore"></label>
+                  <button type="button" class="btn small danger" id="cvDelBefore">Ta bort</button>
+                </div>
+              </div>
+              <div class="cv-group">
+                <h3>Allt för kameran</h3>
+                <div class="cv-actions">
+                  <button type="button" class="btn small danger ghost" id="cvDelAll">Ta bort alla bilder</button>
+                  <button type="button" class="btn small danger ghost" id="cvDelClips">Ta bort alla klipp</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="cv-thumbs-head">
+            <h3 id="cvDayTitle"></h3>
+            <button type="button" class="btn small ghost" id="cvShow" hidden>Visa bilder</button>
+          </div>
+          <div class="cv-thumbs" id="cvThumbs"></div>
+          <button type="button" class="btn small ghost" id="cvMore" hidden>Visa fler</button>
+        </div>
+
+        <dialog id="cvImage" class="img-dialog">
+          <img id="cvImageEl" alt="">
+          <p class="muted" id="cvImageCap"></p>
+          <div class="cv-actions">
+            <button type="button" class="btn small danger" id="cvDelImage">Ta bort bilden</button>
+            <form method="dialog"><button class="btn small ghost">Stäng</button></form>
+          </div>
+        </dialog>
+
+        <form id="purge" class="card">
+          <h2>Ta bort allt som är äldre än</h2>
+          <p class="muted">Gäller alla kameror eller en vald kamera. Bilder räknas per dag, och klipp efter när de
+            skapades.</p>
+          <div class="purge-grid">
+            <label class="field"><span>Datum</span><input type="date" id="purgeDate" required></label>
+            <div class="field"><span>Snabbval</span>
+              <span class="quick">
+                <button type="button" class="btn small ghost" data-days="7">7 dagar</button>
+                <button type="button" class="btn small ghost" data-days="30">30 dagar</button>
+                <button type="button" class="btn small ghost" data-days="90">90 dagar</button>
+              </span></div>
+            <label class="field"><span>Vad</span>
+              <select id="purgeWhat">
+                <option value="all">Bilder och klipp</option>
+                <option value="images">Bara bilder</option>
+                <option value="timelapses">Bara klipp</option>
+              </select></label>
+            <label class="field"><span>Kameror</span><select id="purgeCamera"></select></label>
+          </div>
+          <div class="purge-foot">
+            <p class="preview" id="purgePreview">Välj ett datum.</p>
+            <button class="btn danger" type="submit" id="purgeBtn">Ta bort…</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Inställningar -->
+      <section data-view="installningar" aria-labelledby="h-installningar" hidden>
+        <header class="view-head">
+          <h1 id="h-installningar">Inställningar</h1>
+          <p class="muted">Gäller alla kameror och sparas i appens databas. Värdena från <code>.env</code> är
+            standard tills du ändrar dem här. Ändringar gäller direkt, utan omstart.</p>
+        </header>
+        <form id="settings" novalidate>
+          <div id="groups" class="settings-cards"></div>
+          <div class="savebar" id="savebar" hidden role="region" aria-label="Osparade ändringar">
+            <span id="dirtyCount"></span>
+            <button type="button" class="btn ghost" id="undo">Ångra</button>
+            <button class="btn" type="submit" id="save">Spara</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Underhåll -->
+      <section data-view="underhall" aria-labelledby="h-underhall" hidden>
+        <header class="view-head">
+          <h1 id="h-underhall">Underhåll</h1>
+          <p class="muted">Åtgärder som påverkar hela appen.</p>
+        </header>
+        <form id="wipe" class="card danger-zone">
+          <h2>Rensa allt och börja om</h2>
+          <p>Tar bort <b>alla bilder, klipp, sparad vägtemperatur och jobbhistorik</b> för alla kameror.
+            Det går inte att ångra.</p>
+          <div class="keep-list">
+            <p class="muted">Det här behålls:</p>
+            <ul class="muted">
+              <li>vilka kameror som är aktiva och valen per kamera</li>
+              <li>väderstationer och inställningarna i admin</li>
+            </ul>
+            <p class="muted">Insamlingen fortsätter vid nästa hämtning.</p>
+          </div>
+          <label class="field"><span>Skriv <code>RENSA ALLT</code> för att bekräfta</span>
+            <input id="wipeConfirm" autocomplete="off" spellcheck="false"></label>
+          <button class="btn danger" type="submit" id="wipeBtn" disabled>Rensa allt</button>
+        </form>
+      </section>
+    </main>
+  </div>
 
   <script src="common.js"></script>
   <script src="generate.js"></script>

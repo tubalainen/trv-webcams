@@ -32,14 +32,12 @@ class Field:
     unit: str = ""
 
 
+# The admin page shows one card per group, in this order.
 GROUPS = [
-    ("cameras", "Standard för kameror"),
-    ("collect", "Hämtning"),
-    ("nightly", "Daglig rensning"),
-    ("retention", "Lagring och retention"),
-    ("encoding", "Videokodning"),
-    ("gif", "GIF"),
-    ("weather", "Vägtemperatur"),
+    ("cameras", "Kameror"),
+    ("collect", "Insamling"),
+    ("retention", "Lagring och rensning"),
+    ("encoding", "Video och GIF"),
 ]
 
 FIELDS: list[Field] = [
@@ -72,15 +70,15 @@ FIELDS: list[Field] = [
     ),
     Field(
         "nightly_hour",
-        "Timme",
-        "nightly",
+        "Daglig rensning, timme",
+        "retention",
         "int",
         "När bilder och arkiv äldre än retentionen tas bort varje dygn. Timelapses skapas bara när "
         "någon trycker på Generera.",
         0,
         23,
     ),
-    Field("nightly_minute", "Minut", "nightly", "int", "", 0, 59),
+    Field("nightly_minute", "Daglig rensning, minut", "retention", "int", "", 0, 59),
     Field(
         "snapshot_retention_days",
         "Spara alla bilder i",
@@ -119,13 +117,21 @@ FIELDS: list[Field] = [
         "max_concurrent_jobs", "Samtidiga jobb", "encoding", "int", "Antal timelapse-jobb åt gången.", 1, 8
     ),
     Field("output_fps", "Bilder per sekund i video", "encoding", "int", "", 5, 60, unit="fps"),
-    Field("gif_width", "Bredd", "gif", "int", "", 160, 1280, unit="px"),
-    Field("gif_fps", "Bilder per sekund", "gif", "int", "", 1, 30, unit="fps"),
-    Field("gif_max_frames", "Max antal bilder", "gif", "int", "Större värde ger större filer.", 10, 1000),
+    Field("gif_width", "GIF-bredd", "encoding", "int", "", 160, 1280, unit="px"),
+    Field("gif_fps", "Bilder per sekund i GIF", "encoding", "int", "", 1, 30, unit="fps"),
+    Field(
+        "gif_max_frames",
+        "Max antal bilder i GIF",
+        "encoding",
+        "int",
+        "Större värde ger större filer.",
+        10,
+        1000,
+    ),
     Field(
         "temp_station_max_km",
         "Största avstånd till väderstation",
-        "weather",
+        "collect",
         "float",
         "Kameror utan vägväderstation inom avståndet får ingen graf.",
         1,
@@ -135,7 +141,7 @@ FIELDS: list[Field] = [
     Field(
         "temp_collect_interval_minutes",
         "Hämta vägtemperatur var",
-        "weather",
+        "collect",
         "int",
         "Stationerna mäter var 5:e minut.",
         5,
