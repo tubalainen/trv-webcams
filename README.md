@@ -11,6 +11,12 @@ Webbapplikation som sparar bilder från Trafikverkets webbkameror och skapar tim
 - **Hög- eller lågupplösta bilder** (1280×720/1920×1080 eller 385×217). Standarden sätts i admin och kan ändras per kamera. Listan och kartan märker kameror som har högupplösta bilder med till exempel "HD 1080p".
 - Webbgränssnittet lyssnar på port **8933** och är på svenska. Versionen som körs visas i toppraden, och "Endast aktiva" är förvalt i listan när du har aktiverat kameror.
 
+## Exempel
+
+[![Timelapse från Nyängsrondellen nordost med graf över vägtemperaturen](docs/example/timelapse-nyangsrondellen.gif)](docs/example/timelapse-nyangsrondellen.mp4)
+
+*Nyängsrondellen nordost från torsdag 19 november kl. 00 till fredag 20 november kl. 15.46 (2026). Grafen nere till höger visar vägytans temperatur, som under perioden går från −2,4 °C till 1,1 °C. Klicka på bilden för MP4-filen i 720p, som är skarpare.*
+
 ## Snabbstart
 
 ```bash
@@ -190,12 +196,18 @@ Alla inställningar finns i [`.env.example`](.env.example). Allt utom hemlighete
 | Metod | Sökväg | Beskrivning |
 |-------|--------|-------------|
 | GET | `/api/cameras?q=&county=&enabled=` | Lista kameror |
-| GET | `/api/cameras/{id}` | Detaljer och timelapses för en kamera |
-| PATCH | `/api/cameras/{id}` `{"enabled": true}` | Aktivera eller avaktivera en kamera |
+| GET | `/api/cameras/{id}` | Detaljer för en kamera |
+| PATCH | `/api/cameras/{id}` `{"enabled": true}` | Aktivera eller avaktivera en kamera, eller ändra `temp_overlay_mode` och `resolution_mode` |
 | POST | `/api/cameras/bulk` `{"county": 14, "enabled": true}` | Aktivera eller avaktivera alla kameror i ett län, eller en lista med `ids` |
-| POST | `/api/cameras/{id}/timelapses` `{"periods": ["1d","7d"]}` | Skapa timelapse (svarar med ett jobb) |
-| GET | `/api/jobs/{id}` | Status för ett jobb |
+| GET | `/api/cameras/{id}/snapshots`, `/api/cameras/{id}/latest.jpg` | Sparade bilder och den senaste bilden |
+| POST | `/api/cameras/{id}/clips` `{"start": "…", "end": "…", "formats": ["mp4","gif"], "duration_s": 30}` | Generera ett klipp (svarar med ett jobb) |
+| GET | `/api/cameras/{id}/clips` | Kamerans klipp |
+| DELETE | `/api/cameras/{id}/clips/{clip_id}?kind=mp4\|gif\|all` | Ta bort klippets MP4, GIF eller hela klippet |
+| GET | `/api/clips?q=&batch_id=&kind=`, `/api/batches` | Alla klipp och körningar, nyast först |
+| GET | `/api/jobs`, `/api/jobs/{id}` | Jobb och status för ett jobb |
 | GET | `/api/status`, `/api/health` | Status och hälsokontroll |
+
+Generering för län och alla aktiva kameror, inställningar och radering av bilder ligger under `/api/admin/*` och kräver inloggning.
 
 ## Utveckling
 
