@@ -20,7 +20,7 @@ Webbapplikation som sparar bilder från Trafikverkets webbkameror och skapar tim
 ## Snabbstart
 
 ```bash
-cp .env.example .env        # fyll i TRV_API_KEY
+cp .env.example .env        # fyll i TRV_API_KEY (se nedan)
 docker compose up -d
 ```
 
@@ -33,7 +33,30 @@ docker run -d --name trv-webcams --gpus all -p 8933:8933 \
   -e TRV_API_KEY=... -v $(pwd)/data:/data ghcr.io/tubalainen/trv-webcams:latest
 ```
 
-> **Hemligheter:** `TRV_API_KEY` sätts bara via miljövariabel eller en lokal `.env`-fil. `.env` står i `.gitignore` och får aldrig committas. API-nyckel skaffar du på https://api.trafikinfo.trafikverket.se/.
+> **Hemligheter:** `TRV_API_KEY` sätts bara via miljövariabel eller en lokal `.env`-fil. `.env` står i `.gitignore` och får aldrig committas.
+
+### API-nyckel från Trafikverket
+
+Kameror, bilder och vägtemperatur kommer från Trafikverkets **API Öppna Data**. Data finns i [Trafikverkets datautbytesportal](https://data.trafikverket.se/get-started). Där kan du läsa om alla datamängder utan konto. För att hämta data behöver du ett konto och en API-nyckel. Båda är gratis.
+
+1. **Registrera ett konto** på [data.trafikverket.se/oauth2/Account/register](https://data.trafikverket.se/oauth2/Account/register):
+   - Fyll i e-postadress, visningsnamn och lösenord.
+   - Kryssa i **Godkänn licens och Avtal**, och tryck på **Registrera**.
+2. **Logga in** med **Logga in** uppe till höger på [data.trafikverket.se](https://data.trafikverket.se/). Välj **Logga in (API Öppna Data)**. Det andra valet, Trafikverkskonto, är för konton med kundavtal.
+3. **Skapa en nyckel** under **Mina system** ([data.trafikverket.se/mypage/systems](https://data.trafikverket.se/mypage/systems)). Det är samma sida som länken *Skapa nyckel* under *Kom igång*.
+4. **Lägg in nyckeln i `.env`:**
+
+   ```bash
+   TRV_API_KEY=din-nyckel
+   ```
+
+   Starta sedan om containern med `docker compose up -d`.
+
+Saknas nyckeln visar admin-sidans översikt en varning. Kameralistan hämtas vid start om den är tom, och sedan en gång per dygn. Kamerorna syns alltså direkt när du har startat om med en nyckel.
+
+- **Licens:** datan är licensierad under [Creative Commons CC0](https://creativecommons.org/publicdomain/zero/1.0/deed.sv).
+- **Personuppgifter:** Trafikverket sparar bara din e-postadress, så att de kan informera om ändringar i API:t. Du kan radera kontot när som helst.
+- **Driftstörningar:** de och ändringar i datamängderna visas under *Driftinformation* och *Nyheter* i portalen.
 
 ## GPU-acceleration
 

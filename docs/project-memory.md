@@ -7,6 +7,7 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 | Version | Datum | Issue | PR | Ändring |
 |---------|-------|-------|----|---------|
+| – | 2026-11-20 | #34 | – | README: hur man registrerar sig och skapar en API-nyckel i Trafikverkets datautbytesportal |
 | – | 2026-11-20 | #32 | #33 | README: exempelklipp (`docs/example/`, GIF som länkar till MP4) och uppdaterad API-tabell. Ingen ny version, eftersom det inte är en funktionell ändring |
 | 0.1.11 | 2026-11-20 | #30 | #31 | Snabbare bulkgenerering: MP4 och GIF parallellt i varje jobb, standard 8 jobb och 6 GPU-kodningar, tid per steg i jobbmeddelandet och loggen, ffmpeg dödas när en del avbryts |
 | 0.1.10 | 2026-11-20 | #29 | #28 | Avsnittet Klipp i admin: galleri med alla klipp (sök, körning, format), spelare med nedladdning och radering, länkar från översikten och efter en körning. `GET /api/clips` och `GET /api/batches`. Klipp från körningar får nu `batch_id` |
@@ -132,5 +133,6 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 - Trafikverkets bild-URL är fast per kamera och visar alltid den senaste bilden. Det finns
   ingen bildhistorik i API:t. Trafikflödeskameror uppdateras var 1–2 minut, väglagskameror var 5–10 minut.
 - Exempelklippet i README ligger i `docs/example/`. GitHub visar inte en incheckad MP4 i README, så README visar en GIF (480 px, 8 fps, cirka 6 MB) som länkar till MP4:an (720p, CRF 26, cirka 3 MB).
+- API-nyckeln skapas i Trafikverkets datautbytesportal (`data.trafikverket.se`): registrera på `/oauth2/Account/register`, logga in med "Logga in (API Öppna Data)" och skapa nyckeln under "Mina system" (`/mypage/systems`). Den gamla registreringssidan `api.trafikinfo.trafikverket.se/` ger 404 (kontrollerat 2026-11-20), men API-adressen `…/v2/data.json` fungerar fortfarande. Portalen är en SPA, så den måste läsas med en webbläsare (Playwright), inte curl.
 - Molnsandlådan har ingen GPU, och `docker build` stoppas av proxyn vid pip.
   Docker-bygget verifieras därför i CI.
