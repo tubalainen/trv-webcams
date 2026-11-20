@@ -7,7 +7,7 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 | Version | Datum | Issue | PR | Ändring |
 |---------|-------|-------|----|---------|
-| – | 2026-11-20 | #34 | – | README: hur man registrerar sig och skapar en API-nyckel i Trafikverkets datautbytesportal |
+| – | 2026-11-20 | #34 | #35 | README: hur man registrerar sig och skapar en API-nyckel i Trafikverkets datautbytesportal |
 | – | 2026-11-20 | #32 | #33 | README: exempelklipp (`docs/example/`, GIF som länkar till MP4) och uppdaterad API-tabell. Ingen ny version, eftersom det inte är en funktionell ändring |
 | 0.1.11 | 2026-11-20 | #30 | #31 | Snabbare bulkgenerering: MP4 och GIF parallellt i varje jobb, standard 8 jobb och 6 GPU-kodningar, tid per steg i jobbmeddelandet och loggen, ffmpeg dödas när en del avbryts |
 | 0.1.10 | 2026-11-20 | #29 | #28 | Avsnittet Klipp i admin: galleri med alla klipp (sök, körning, format), spelare med nedladdning och radering, länkar från översikten och efter en körning. `GET /api/clips` och `GET /api/batches`. Klipp från körningar får nu `batch_id` |
