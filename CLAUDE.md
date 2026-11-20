@@ -32,8 +32,9 @@ gränssnitt och körs som en Docker-container.
    på engelska och hänvisa till issuet (`Refs #N`).
 3. **PR.** PR-beskrivningen skrivs på svenska och innehåller `Closes #N` för varje issue
    den löser, så att issuet stängs vid merge. Ta med vad som är testat och vad som inte är det.
-4. **Release.** Höj `__version__` i `app/__init__.py` och `version` i `pyproject.toml`
-   i PR:en. En merge till main med en version som saknar tagg publicerar automatiskt
+4. **Release.** Bara funktionella ändringar i appen blir en ny release. Höj då `__version__`
+   i `app/__init__.py` och `version` i `pyproject.toml` i PR:en. Andra ändringar (README,
+   dokumentation, projektminne, CI) mergas till main utan att versionen höjs. En merge till main med en version som saknar tagg publicerar automatiskt
    `:X.Y.Z`, `:X.Y`, `:latest`, taggen `vX.Y.Z` och en GitHub-release
    (`.github/workflows/release.yml`). Merga bara när användaren har bett om det och CI är grönt.
 5. **Projektminne.** Uppdatera `docs/project-memory.md` i samma PR: ändringslogg,
