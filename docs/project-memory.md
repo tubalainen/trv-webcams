@@ -7,7 +7,7 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 | Version | Datum | Issue | PR | Ändring |
 |---------|-------|-------|----|---------|
-| – | 2026-11-20 | #32 | – | README: exempelklipp (`docs/example/`, GIF som länkar till MP4) och uppdaterad API-tabell. Ingen ny version, eftersom imagen inte ändras |
+| – | 2026-11-20 | #32 | #33 | README: exempelklipp (`docs/example/`, GIF som länkar till MP4) och uppdaterad API-tabell. Ingen ny version, eftersom imagen inte ändras |
 | 0.1.11 | 2026-11-20 | #30 | #31 | Snabbare bulkgenerering: MP4 och GIF parallellt i varje jobb, standard 8 jobb och 6 GPU-kodningar, tid per steg i jobbmeddelandet och loggen, ffmpeg dödas när en del avbryts |
 | 0.1.10 | 2026-11-20 | #29 | #28 | Avsnittet Klipp i admin: galleri med alla klipp (sök, körning, format), spelare med nedladdning och radering, länkar från översikten och efter en körning. `GET /api/clips` och `GET /api/batches`. Klipp från körningar får nu `batch_id` |
 | 0.1.10 | 2026-11-20 | #27 | #28 | Fler parallella genereringar: "Samtidiga jobb" upp till 16 (standard 4), ny gräns "Samtidiga GPU-kodningar" (standard 3), ett misslyckat GPU-försök kodar bara det klippet på CPU |
