@@ -7,7 +7,7 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 | Version | Datum | Issue | PR | Ändring |
 |---------|-------|-------|----|---------|
-| 0.1.12 | 2026-11-21 | #37 | – | Lagring: nytt kort "Ta bort alla klipp" (alla kameror eller en), `DELETE /api/admin/clips`, förhandsräkningen visar när det äldsta klippet skapades, och "äldre än" räknas från midnatt i `TIMEZONE` |
+| 0.1.12 | 2026-11-21 | #37 | #38 | Lagring: nytt kort "Ta bort alla klipp" (alla kameror eller en), `DELETE /api/admin/clips`, förhandsräkningen visar när det äldsta klippet skapades, och "äldre än" räknas från midnatt i `TIMEZONE` |
 | – | 2026-11-21 | #36 | #35 | MIT-licens: `LICENSE`, `pyproject.toml`, image-etikett och avsnitt i README |
 | – | 2026-11-20 | #34 | #35 | README: hur man registrerar sig och skapar en API-nyckel i Trafikverkets datautbytesportal |
 | – | 2026-11-20 | #32 | #33 | README: exempelklipp (`docs/example/`, GIF som länkar till MP4) och uppdaterad API-tabell. Ingen ny version, eftersom det inte är en funktionell ändring |
