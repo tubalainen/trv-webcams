@@ -265,4 +265,12 @@ DATA_DIR=./data python -m app.main
   Resultaten hamnar under *Security → Code scanning*. Körningen misslyckas om det finns kritiska eller allvarliga sårbarheter som har en åtgärd.
 - **Dependabot** uppdaterar pip-paket, GitHub Actions och Docker-basimagen varje vecka.
 
-Bilddata: © Trafikverket. Kartdata: © OpenStreetMap-bidragsgivare.
+## Licens
+
+Koden är licensierad under [MIT-licensen](LICENSE). Du får använda, ändra och sprida den fritt, också kommersiellt, så länge licenstexten följer med.
+
+Licensen gäller bara koden i repot. För data och inbäddade bibliotek gäller deras egna villkor:
+
+- **Bilddata, kameradata och vägtemperatur:** © Trafikverket, licensierad under [CC0](https://creativecommons.org/publicdomain/zero/1.0/deed.sv) (se [API-nyckel från Trafikverket](#api-nyckel-från-trafikverket)).
+- **Kartdata:** © OpenStreetMap-bidragsgivare, licensierad under [ODbL](https://www.openstreetmap.org/copyright).
+- **Kartbiblioteken** i `app/static/vendor/`: Leaflet (BSD-2-Clause) och Leaflet.markercluster (MIT).

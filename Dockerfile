@@ -14,6 +14,7 @@ ARG VERSION=dev
 LABEL org.opencontainers.image.title="trv-webcams" \
       org.opencontainers.image.description="Timelapses från Trafikverkets webbkameror" \
       org.opencontainers.image.source="https://github.com/tubalainen/trv-webcams" \
+      org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.version="${VERSION}"
 
 # Debian's ffmpeg is built with NVENC/NVDEC (loaded at runtime from the NVIDIA driver),

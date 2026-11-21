@@ -7,6 +7,7 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 | Version | Datum | Issue | PR | Ändring |
 |---------|-------|-------|----|---------|
+| – | 2026-11-21 | #36 | #35 | MIT-licens: `LICENSE`, `pyproject.toml`, image-etikett och avsnitt i README |
 | – | 2026-11-20 | #34 | #35 | README: hur man registrerar sig och skapar en API-nyckel i Trafikverkets datautbytesportal |
 | – | 2026-11-20 | #32 | #33 | README: exempelklipp (`docs/example/`, GIF som länkar till MP4) och uppdaterad API-tabell. Ingen ny version, eftersom det inte är en funktionell ändring |
 | 0.1.11 | 2026-11-20 | #30 | #31 | Snabbare bulkgenerering: MP4 och GIF parallellt i varje jobb, standard 8 jobb och 6 GPU-kodningar, tid per steg i jobbmeddelandet och loggen, ffmpeg dödas när en del avbryts |
@@ -39,6 +40,7 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 - **Vad som blir en release (beslut 2026-11-20):** bara funktionella ändringar i appen
   höjer versionen och ger en release. Andra ändringar (README, dokumentation,
   projektminne, CI) mergas till main utan att versionen höjs.
+- **Licens (beslut 2026-11-21):** koden är MIT (`LICENSE`, upphovsrätt "tubalainen"). Data från Trafikverket är CC0, kartdata från OpenStreetMap är ODbL, och de inbäddade biblioteken Leaflet (BSD-2) och markercluster (MIT) har egna licenser.
 - **Rättigheter i containern:** startskriptet körs som root, kör `chown` på `/data`
   bara när något har fel ägare, och startar sedan appen med `setpriv` som
   `PUID:PGID` utan capabilities. `user:` i compose hoppar över det steget.
