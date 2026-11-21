@@ -10,8 +10,9 @@ import logging
 import os
 import shutil
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime, time
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select, update
 
@@ -217,6 +218,12 @@ def delete_images(
     return result
 
 
+def local_midnight_utc(settings: Settings, day: date) -> datetime:
+    """Midnight of a local day (TIMEZONE) as naive UTC, the format of the created_at columns."""
+    local = datetime.combine(day, time.min, tzinfo=ZoneInfo(settings.timezone))
+    return local.astimezone(UTC).replace(tzinfo=None)
+
+
 def delete_timelapses(
     settings: Settings,
     camera_id: str | None = None,
@@ -229,7 +236,7 @@ def delete_timelapses(
     if camera_id is not None:
         _camera_exists(camera_id)
     _ensure_idle(camera_id)
-    cutoff = datetime.combine(parse_day(before), datetime.min.time()) if before is not None else None
+    cutoff = local_midnight_utc(settings, parse_day(before)) if before is not None else None
     result = Result()
     with session_scope() as s:
         stmt = select(Clip)

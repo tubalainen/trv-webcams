@@ -330,6 +330,12 @@ async def delete_camera_timelapses(camera_id: str) -> dict:
     return await asyncio.to_thread(_run, cleanup.delete_timelapses, camera_id)
 
 
+@router.delete("/clips", dependencies=[Depends(require_admin)])
+async def delete_all_clips(camera_id: str | None = None) -> dict:
+    """Delete all library clips, of all cameras or of one camera."""
+    return await asyncio.to_thread(_run, cleanup.delete_timelapses, camera_id or None)
+
+
 @router.delete("/clips/{clip_id}", dependencies=[Depends(require_admin)])
 async def delete_clip(clip_id: int) -> dict:
     return await asyncio.to_thread(_run, cleanup.delete_timelapses, clip_id=clip_id)

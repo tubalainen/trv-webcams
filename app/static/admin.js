@@ -459,7 +459,11 @@ $("ovJobs").addEventListener("click", async (ev) => {
 /* ---- Lagring ---- */
 let storageData = null;
 let storageAt = 0;
-const isoDay = (d) => d.toISOString().slice(0, 10);
+/** YYYY-MM-DD in local time (toISOString would give the UTC day). */
+const isoDay = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+/** Local day a clip was created (created_at is UTC). */
+const clipDay = (t) => isoDay(new Date(t.created_at));
 const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return isoDay(d); };
 // storage day rows: [day, snapshot images, snapshot bytes, archive images, archive-only bytes]
 const dayImages = (d) => (d[1] > 0 ? d[1] : d[3]);
@@ -480,6 +484,12 @@ async function loadStorage() {
   sel.innerHTML = `<option value="">Alla kameror</option>` + storageData.cameras.map((c) =>
     `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
   sel.value = storageData.cameras.some((c) => c.id === cur) ? cur : "";
+  const csel = $("clipPurgeCamera");
+  const ccur = csel.value;
+  const withClips = storageData.cameras.filter((c) => c.timelapses.length);
+  csel.innerHTML = `<option value="">Alla kameror</option>` + withClips.map((c) =>
+    `<option value="${esc(c.id)}">${esc(c.name)} (${plural(c.timelapses.length, "klipp", "klipp")})</option>`).join("");
+  csel.value = withClips.some((c) => c.id === ccur) ? ccur : "";
   renderStorageTable();
   if (cv.id) {
     if (storageData.cameras.some((c) => c.id === cv.id)) openCamView(cv.id, true);
@@ -501,7 +511,7 @@ function purgeEstimate() {
       imgs += n; bytes += b;
     }
     if (what !== "images") {
-      const old = c.timelapses.filter((t) => t.created_at.slice(0, 10) < before);
+      const old = c.timelapses.filter((t) => clipDay(t) < before);
       clips += old.length;
       bytes += old.reduce((a, t) => a + t.bytes, 0);
     }
@@ -510,14 +520,65 @@ function purgeEstimate() {
   if (what !== "timelapses") parts.push(plural(imgs, "bild", "bilder"));
   if (what !== "images") parts.push(plural(clips, "klipp", "klipp"));
   const where = camId ? cams[0]?.name || "" : "alla kameror";
-  return { imgs, clips, bytes, text: `${parts.join(" och ")} (${fmtBytes(bytes)}) från före ${before}, ${where}` };
+  let hint = "";
+  if (what !== "images" && !clips) {
+    const days = cams.flatMap((c) => c.timelapses.map(clipDay)).sort();
+    if (days.length) hint = `Inga klipp skapades före ${before}. Det äldsta klippet skapades ${days[0]}.`;
+  }
+  return { imgs, clips, bytes, hint, text: `${parts.join(" och ")} (${fmtBytes(bytes)}) från före ${before}, ${where}` };
 }
 
 function updatePreview() {
   const est = purgeEstimate();
-  $("purgePreview").innerHTML = est ? `Tar bort ungefär <b>${esc(est.text)}</b>.` : "Välj ett datum.";
+  $("purgePreview").innerHTML = est
+    ? `Tar bort ungefär <b>${esc(est.text)}</b>.` + (est.hint ? `<br><span class="muted">${esc(est.hint)}</span>` : "")
+    : "Välj ett datum.";
   $("purgeBtn").disabled = !est || (!est.imgs && !est.clips);
+  updateClipPreview();
 }
+
+/** Returns {clips, bytes, where} for the "all clips" form. */
+function clipPurgeEstimate() {
+  if (!storageData) return null;
+  const camId = $("clipPurgeCamera").value;
+  const cams = storageData.cameras.filter((c) => !camId || c.id === camId);
+  const all = cams.flatMap((c) => c.timelapses);
+  return { clips: all.length, bytes: all.reduce((a, t) => a + t.bytes, 0),
+    where: camId ? cams[0]?.name || "" : "alla kameror" };
+}
+
+function updateClipPreview() {
+  const est = clipPurgeEstimate();
+  $("clipPurgePreview").innerHTML = !est ? ""
+    : est.clips ? `Tar bort <b>${esc(plural(est.clips, "klipp", "klipp"))} (${esc(fmtBytes(est.bytes))})</b>, ${esc(est.where)}.`
+    : "Det finns inga klipp.";
+  $("clipPurgeBtn").disabled = !est || !est.clips;
+}
+
+$("clipPurgeCamera").addEventListener("input", updateClipPreview);
+$("clipPurge").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const est = clipPurgeEstimate();
+  if (!est || !est.clips) return;
+  const camId = $("clipPurgeCamera").value;
+  const ok = await confirmDialog({
+    title: "Ta bort alla klipp?", danger: true, confirmText: "Ta bort",
+    body: `Tar bort ${plural(est.clips, "klipp", "klipp")} (${fmtBytes(est.bytes)}), ${est.where}.\n\n` +
+      "Bilderna ligger kvar, så klippen går att generera igen. Det går inte att ångra.",
+  });
+  if (!ok) return;
+  $("clipPurgeBtn").disabled = true;
+  try {
+    const r = await api(`api/admin/clips${camId ? `?camera_id=${encodeURIComponent(camId)}` : ""}`,
+      { method: "DELETE" });
+    toast(`Klart: ${doneText(r)}`, "ok");
+    await loadStorage();
+    loadStatus();
+  } catch (e) {
+    toast(`Kunde inte ta bort: ${e.message}`, "error");
+    updateClipPreview();
+  }
+});
 
 for (const id of ["purgeDate", "purgeWhat", "purgeCamera"]) $(id).addEventListener("input", updatePreview);
 document.querySelectorAll("[data-days]").forEach((b) => b.addEventListener("click", () => {
@@ -639,6 +700,7 @@ function openCamView(id, keepSelection = false) {
   const st = camStats(cam);
   $("storageList").hidden = true;
   $("purge").hidden = true;
+  $("clipPurge").hidden = true;
   $("storageSummary").hidden = true;
   $("camView").hidden = false;
   $("cvName").innerHTML = `<a href="camera.html?id=${encodeURIComponent(id)}">${esc(cam.name)}</a>`;
@@ -656,6 +718,7 @@ function closeCamView() {
   $("camView").hidden = true;
   $("storageList").hidden = false;
   $("purge").hidden = false;
+  $("clipPurge").hidden = false;
   $("storageSummary").hidden = false;
   renderStorageTable();
   if (id) $("storageRows").querySelector(`[data-cam="${CSS.escape(id)}"]`)?.focus();

@@ -219,7 +219,7 @@ docker compose up -d</pre>
         <form id="purge" class="card">
           <h2>Ta bort allt som är äldre än</h2>
           <p class="muted">Gäller alla kameror eller en vald kamera. Bilder räknas per dag, och klipp efter när de
-            skapades.</p>
+            skapades. Alla klipp oavsett datum tar du bort i kortet nedanför.</p>
           <div class="purge-grid">
             <label class="field"><span>Datum</span><input type="date" id="purgeDate" required></label>
             <div class="field"><span>Snabbval</span>
@@ -239,6 +239,19 @@ docker compose up -d</pre>
           <div class="purge-foot">
             <p class="preview" id="purgePreview">Välj ett datum.</p>
             <button class="btn danger" type="submit" id="purgeBtn">Ta bort…</button>
+          </div>
+        </form>
+
+        <form id="clipPurge" class="card">
+          <h2>Ta bort alla klipp</h2>
+          <p class="muted">Tar bort genererade klipp (MP4 och GIF) oavsett när de skapades. Bilderna ligger kvar,
+            så klippen går att generera igen.</p>
+          <div class="purge-grid">
+            <label class="field"><span>Kameror</span><select id="clipPurgeCamera"></select></label>
+          </div>
+          <div class="purge-foot">
+            <p class="preview" id="clipPurgePreview"></p>
+            <button class="btn danger" type="submit" id="clipPurgeBtn">Ta bort klippen…</button>
           </div>
         </form>
       </section>

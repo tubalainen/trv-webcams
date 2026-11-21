@@ -247,6 +247,7 @@ a { color: var(--accent); }
 .purge-grid { display: flex; flex-wrap: wrap; gap: 12px 16px; margin: 12px 0; align-items: end; }
 .purge-grid > .field { flex: 1 1 170px; }
 .purge-grid > .field:nth-child(2) { flex: 0 0 auto; }
+#clipPurge .purge-grid > .field { max-width: 420px; }
 .purge-grid .quick { display: flex; gap: 6px; flex-wrap: wrap; font-weight: 400; }
 .purge-foot { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between;
   padding-top: 12px; border-top: 1px solid var(--border); }
