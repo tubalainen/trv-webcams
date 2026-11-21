@@ -153,6 +153,28 @@ def test_purge_older_than_all_cameras(data):
         cleanup.purge_older_than(data, _day(5), "everything")
 
 
+def test_clip_cutoff_is_local_midnight(data, monkeypatch):
+    monkeypatch.setattr(data, "timezone", "Europe/Stockholm")
+    # 00:30 local time in Stockholm on 2026-01-15 is 23:30 UTC the day before
+    assert cleanup.local_midnight_utc(data, date(2026, 1, 15)) == datetime(2026, 1, 14, 23, 0)
+    assert cleanup.local_midnight_utc(data, date(2026, 7, 15)) == datetime(2026, 7, 14, 22, 0)
+    midnight = cleanup.local_midnight_utc(data, TODAY)
+    early = _add_clip(data, "CAM_B", midnight + timedelta(minutes=30))  # just after local midnight today
+    late = _add_clip(data, "CAM_B", midnight - timedelta(minutes=30))  # just before it, i.e. yesterday
+    r = cleanup.delete_timelapses(data, "CAM_B", before=_day(0))
+    with session_scope() as s:
+        left = {c.id for c in s.scalars(select(Clip).where(Clip.camera_id == "CAM_B"))}
+    assert r.timelapses == 2 and left == {early} and late not in left
+
+
+def test_delete_all_clips(data):
+    r = cleanup.delete_timelapses(data)
+    assert r.timelapses == 3 and r.cameras == {"CAM_A", "CAM_B"}
+    with session_scope() as s:
+        assert not list(s.scalars(select(Clip)))
+    assert _days(data, "snapshot_dir", "CAM_A") == [_day(40), _day(10), _day(0)]  # images stay
+
+
 def test_running_job_blocks_deletion(data):
     with session_scope() as s:
         s.add(Job(camera_id="CAM_A", status="running", created_at=utcnow()))
@@ -224,6 +246,11 @@ def test_admin_api(data, monkeypatch):
         assert c.delete(f"/api/admin/clips/{data._clips['old_a']}").json()["timelapses"] == 1
         assert c.delete(f"/api/admin/clips/{data._clips['old_a']}").status_code == 400
         assert c.delete("/api/admin/cameras/CAM_A/timelapses").json()["timelapses"] == 1
+        assert c.delete("/api/admin/clips?camera_id=NOPE").status_code == 400
+        assert c.delete("/api/admin/clips?camera_id=CAM_B").json()["timelapses"] == 1
+        _add_clip(data, "CAM_A", utcnow())
+        _add_clip(data, "CAM_B", utcnow())
+        assert c.delete("/api/admin/clips").json()["timelapses"] == 2
 
         assert c.post("/api/admin/wipe", json={"confirm": "rensa"}).status_code == 400
         r = c.post("/api/admin/wipe", json={"confirm": "RENSA ALLT"})

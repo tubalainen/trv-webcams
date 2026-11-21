@@ -7,6 +7,7 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 | Version | Datum | Issue | PR | Ändring |
 |---------|-------|-------|----|---------|
+| 0.1.12 | 2026-11-21 | #37 | – | Lagring: nytt kort "Ta bort alla klipp" (alla kameror eller en), `DELETE /api/admin/clips`, förhandsräkningen visar när det äldsta klippet skapades, och "äldre än" räknas från midnatt i `TIMEZONE` |
 | – | 2026-11-21 | #36 | #35 | MIT-licens: `LICENSE`, `pyproject.toml`, image-etikett och avsnitt i README |
 | – | 2026-11-20 | #34 | #35 | README: hur man registrerar sig och skapar en API-nyckel i Trafikverkets datautbytesportal |
 | – | 2026-11-20 | #32 | #33 | README: exempelklipp (`docs/example/`, GIF som länkar till MP4) och uppdaterad API-tabell. Ingen ny version, eftersom det inte är en funktionell ändring |
@@ -119,7 +120,10 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
   håller insamlingens lås medan den kör. Dagar tas bort i både `snapshots` och `archive`.
   Antal och frigjorda byte räknas per inode, så en arkivlänk räknas inte som en extra bild.
   Pågående jobb för kameran ger 409. "Äldre än" för timelapses gäller när klippet skapades
-  (`created_at`). Sedan 0.1.6 gäller timelapse-radering klipp, och "Rensa allt" tömmer också
+  (`created_at`, lagrad som naiv UTC). Sedan 0.1.12 jämförs den med midnatt i `TIMEZONE`
+  (`cleanup.local_midnight_utc`), och gränssnittet räknar dagen i lokal tid (`clipDay`, `isoDay`).
+  Tidigare jämfördes UTC mot ett lokalt datum.
+  - **Ta bort alla klipp (0.1.12):** användaren försökte rensa klipp med "äldre än 7 dagar" och fick 0 klipp, eftersom alla klipp var nyss skapade. Därför finns ett eget kort som tar bort alla klipp oavsett datum (`DELETE /api/admin/clips?camera_id=`, utan `camera_id` gäller det alla kameror). Bilderna ligger kvar. Sedan 0.1.6 gäller timelapse-radering klipp, och "Rensa allt" tömmer också
   `clips` och `batches`.
 
 ## Bra att veta

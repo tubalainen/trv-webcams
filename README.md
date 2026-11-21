@@ -123,7 +123,7 @@ Admin-sidan (`⚙ Admin` i toppraden) har en sidomeny med sex avsnitt. På mobil
 | **Översikt** | Startsidan, som uppdateras varje minut. Visar aktiva kameror, lagring och disk (med en uppskattning vid full retention), videokodare/GPU, jobbkö, nästa schemalagda körningar och de senaste genereringarna, med tid per steg (bilder, graf, MP4, GIF). Varningar visas för saknad `TRV_API_KEY`, lite diskutrymme, en disk som inte räcker vid full retention, misslyckade genereringar och inga aktiva kameror. |
 | **Generera** | Klipp för alla aktiva kameror eller de aktiva i ett län (se ovan). När en körning är klar leder "Visa klippen" till dess klipp. |
 | **Klipp** | Galleri med alla genererade klipp för alla kameror, nyast först. Sök på kamera och filtrera på körning eller format (MP4, GIF). Förhandsvisningen spelas när muspekaren är över. Ett klick öppnar en spelare med MP4 och GIF, nedladdning, bläddring med ‹ › eller piltangenterna, och radering av MP4, GIF eller hela klippet. "▶ Visa" i översiktens senaste genereringar öppnar samma spelare. |
-| **Lagring** | Lagring per kamera, kameravyn och "Ta bort allt som är äldre än" (se nedan). |
+| **Lagring** | Lagring per kamera, kameravyn, "Ta bort allt som är äldre än" och "Ta bort alla klipp" (se nedan). |
 | **Inställningar** | De globala inställningarna i fyra kort. |
 | **Underhåll** | Rensa allt och börja om. |
 
@@ -155,7 +155,11 @@ Avsnitten **Lagring** och **Underhåll** på admin-sidan har de här verktygen:
   - Välj ett datum, eller snabbvalen 7, 30 eller 90 dagar.
   - Välj bilder, timelapses eller båda, och alla kameror eller en kamera.
   - En förhandsräkning visar hur mycket som tas bort, och en dialog frågar innan något tas bort.
-  - Bilder räknas per dag, och klipp efter när de skapades.
+  - Bilder räknas per dag, och klipp efter dagen de skapades (i `TIMEZONE`). Ett klipp som skapades i går går alltså inte att ta bort med "äldre än 7 dagar".
+  - Om inga klipp träffas visar förhandsräkningen när det äldsta klippet skapades.
+- **Ta bort alla klipp:** tar bort genererade klipp (MP4 och GIF) oavsett när de skapades, för alla kameror eller en kamera.
+  - Listan visar hur många klipp varje kamera har, och en dialog frågar innan något tas bort.
+  - Bilderna ligger kvar, så klippen går att generera igen.
 - **Lagring per kamera:** en sammanfattning och en sökbar, sorterbar tabell (störst, flest bilder, äldst, flest klipp eller namn) med bilder, dagar, storlek och klipp per kamera.
 - **Kameravy:** klicka på en kamera i tabellen. Vyn ersätter tabellen, och "← Alla kameror med data" leder tillbaka.
   - **Kalender:** dagar är färgade efter mängden bilder, ljusblå för dagar som bara har timbilder.
