@@ -11,16 +11,29 @@ map.addLayer(cluster);
 
 const camUrl = (id) => `camera.html?id=${encodeURIComponent(id)}`;
 
+// Colours per camera kind (from Trafikverket's Type). Active cameras are larger and solid.
+const KINDS = {
+  flow: { label: "Trafikflöde", plural: "trafikflödeskameror", fill: "#1f6feb", edge: "#0a3069" },
+  road: { label: "Väglag", plural: "väglagskameror", fill: "#e8710a", edge: "#7a3a00" },
+  "": { label: "Övrig", plural: "övriga kameror", fill: "#8c959f", edge: "#424a53" },
+};
+const kindOf = (c) => KINDS[c.kind] || KINDS[""];
+
 function markerStyle(c) {
+  const k = kindOf(c);
   return c.enabled
-    ? { radius: 8, color: "#0b6b2f", weight: 2, fillColor: "#2ea043", fillOpacity: 0.95 }
-    : { radius: 6, color: "#555", weight: 1, fillColor: "#9aa4af", fillOpacity: 0.8 };
+    ? { radius: 8, color: k.edge, weight: 2.5, fillColor: k.fill, fillOpacity: 0.95 }
+    : { radius: 5, color: k.fill, weight: 1, fillColor: k.fill, fillOpacity: 0.35 };
+}
+
+function kindTag(c) {
+  return `<span class="kind-tag kind-${c.kind || "other"}" title="${esc(c.type || "Okänd typ")}">${kindOf(c).label}</span>`;
 }
 
 function popupHtml(c) {
   return `<div class="popup">
     <strong>${esc(c.name)}</strong><br>
-    <span class="muted">${esc(c.county)} · ${esc(c.type)}${c.hd ? ` · <span class="badge" title="Har högupplösta bilder">HD ${esc(c.hd)}</span>` : ""}</span>
+    <span class="muted">${kindTag(c)} ${esc(c.county)}${c.enabled ? " · Aktiv" : ""}${c.hd ? ` · <span class="badge" title="Har högupplösta bilder">HD ${esc(c.hd)}</span>` : ""}</span>
     <img src="api/cameras/${encodeURIComponent(c.id)}/latest.jpg" alt="" loading="lazy">
     <div class="popup-actions">
       <a class="btn small" href="${camUrl(c.id)}">Öppna</a>
@@ -32,10 +45,12 @@ function popupHtml(c) {
 function filtered() {
   const q = document.getElementById("search").value.trim().toLowerCase();
   const county = document.getElementById("county").value;
+  const kind = document.getElementById("kind").value;
   const only = document.getElementById("onlyEnabled").checked;
   return state.cameras.filter((c) =>
     (!q || c.name.toLowerCase().includes(q)) &&
     (!county || String(c.county_no) === county) &&
+    (!kind || c.kind === kind) &&
     (!only || c.enabled));
 }
 
@@ -53,7 +68,7 @@ function render() {
       </label>
       <a href="${camUrl(c.id)}" class="cam-link" data-focus="${esc(c.id)}">
         <span class="name">${esc(c.name)}</span>
-        <span class="muted">${esc(c.county)}${c.hd ? ` <span class="badge${c.saves_hd ? " on" : ""}" title="${c.saves_hd ? "Sparar högupplösta bilder" : "Har högupplösta bilder"}">HD ${esc(c.hd)}</span>` : ""}</span>
+        <span class="muted">${kindTag(c)} ${esc(c.county)}${c.hd ? ` <span class="badge${c.saves_hd ? " on" : ""}" title="${c.saves_hd ? "Sparar högupplösta bilder" : "Har högupplösta bilder"}">HD ${esc(c.hd)}</span>` : ""}</span>
       </a>`;
     frag.appendChild(li);
   }
@@ -79,10 +94,24 @@ function render() {
   }
   cluster.addLayers(layers);
 
-  const county = document.getElementById("county").value;
   const bulk = document.getElementById("bulk");
-  bulk.hidden = !county;
-  if (county) document.getElementById("bulkLabel").textContent = state.counties[county] + ":";
+  const scope = bulkScope();
+  bulk.hidden = !scope;
+  if (scope) {
+    document.getElementById("bulkLabel").textContent = `${scope.text[0].toUpperCase()}${scope.text.slice(1)}:`;
+  }
+}
+
+// What "Aktivera/Avaktivera alla" applies to: the chosen county, camera kind or both.
+function bulkScope() {
+  const county = document.getElementById("county").value;
+  const kind = document.getElementById("kind").value;
+  if (!county && !kind) return null;
+  const what = kind ? KINDS[kind].plural : "kameror";
+  return {
+    body: { ...(county && { county: Number(county) }), ...(kind && { kind }) },
+    text: county ? `${what} i ${state.counties[county]} län` : `alla ${what}`,
+  };
 }
 
 async function toggle(id, enabled) {
@@ -102,11 +131,11 @@ async function toggle(id, enabled) {
 }
 
 async function bulk(enabled) {
-  const county = document.getElementById("county").value;
-  if (!county) return;
-  const name = state.counties[county];
-  if (!confirm(`${enabled ? "Aktivera" : "Avaktivera"} alla kameror i ${name} län?`)) return;
-  await api("api/cameras/bulk", { method: "POST", body: { county: Number(county), enabled } });
+  const scope = bulkScope();
+  if (!scope) return;
+  const text = scope.text.startsWith("alla ") ? scope.text : `alla ${scope.text}`;
+  if (!confirm(`${enabled ? "Aktivera" : "Avaktivera"} ${text}?`)) return;
+  await api("api/cameras/bulk", { method: "POST", body: { ...scope.body, enabled } });
   await loadCameras();
   loadStatus();
 }
@@ -140,6 +169,7 @@ document.getElementById("county").addEventListener("change", () => {
   const cams = filtered().filter((c) => c.lat != null);
   if (cams.length) map.fitBounds(L.latLngBounds(cams.map((c) => [c.lat, c.lon])).pad(0.1));
 });
+document.getElementById("kind").addEventListener("change", render);
 document.getElementById("onlyEnabled").addEventListener("change", render);
 document.getElementById("bulkOn").addEventListener("click", () => bulk(true));
 document.getElementById("bulkOff").addEventListener("click", () => bulk(false));

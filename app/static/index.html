@@ -22,12 +22,17 @@
       <div class="filters">
         <input id="search" type="search" placeholder="Sök kamera…" aria-label="Sök kamera">
         <select id="county" aria-label="Län"><option value="">Alla län</option></select>
+        <select id="kind" aria-label="Kameratyp">
+          <option value="">Alla typer</option>
+          <option value="flow">Trafikflödeskameror</option>
+          <option value="road">Väglagskameror</option>
+        </select>
         <label class="check"><input id="onlyEnabled" type="checkbox"> Endast aktiva</label>
       </div>
       <div class="bulk" id="bulk" hidden>
         <span id="bulkLabel"></span>
-        <button id="bulkOn" class="btn small">Aktivera alla i länet</button>
-        <button id="bulkOff" class="btn small ghost">Avaktivera alla i länet</button>
+        <button id="bulkOn" class="btn small">Aktivera alla</button>
+        <button id="bulkOff" class="btn small ghost">Avaktivera alla</button>
       </div>
       <div class="count" id="count"></div>
       <ul id="list" class="cam-list" aria-label="Kameror"></ul>
@@ -35,8 +40,10 @@
     <section class="map-wrap">
       <div id="map"></div>
       <div class="legend">
-        <span><i class="dot on"></i> Aktiv (sparar bilder)</span>
-        <span><i class="dot off"></i> Inaktiv</span>
+        <span><i class="dot kind-flow"></i> Trafikflöde</span>
+        <span><i class="dot kind-road"></i> Väglag</span>
+        <span><i class="dot big"></i> Aktiv (sparar bilder)</span>
+        <span><i class="dot small"></i> Inaktiv</span>
       </div>
     </section>
   </main>

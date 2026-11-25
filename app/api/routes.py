@@ -51,6 +51,7 @@ def _camera_summary(c: Camera) -> dict:
         "id": c.id,
         "name": c.name,
         "type": c.type,
+        "kind": cameras.camera_kind(c.type),
         "lat": c.lat,
         "lon": c.lon,
         "county_no": c.county_no,
@@ -229,21 +230,27 @@ def update_camera(camera_id: str, body: CameraUpdate, background: BackgroundTask
 class BulkUpdate(BaseModel):
     ids: list[str] = []
     county: int | None = None
+    kind: str | None = None  # "flow" or "road", combined with county
     enabled: bool
 
 
 @router.post("/api/cameras/bulk")
 def bulk_update(body: BulkUpdate, background: BackgroundTasks) -> dict:
+    if body.kind is not None and body.kind not in cameras.KINDS:
+        raise HTTPException(400, "kind måste vara flow eller road")
     with session_scope() as s:
         stmt = select(Camera)
-        if body.county is not None:
-            stmt = stmt.where(Camera.county_no == body.county)
+        if body.county is not None or body.kind is not None:
+            if body.county is not None:
+                stmt = stmt.where(Camera.county_no == body.county)
         elif body.ids:
             stmt = stmt.where(Camera.id.in_(body.ids))
         else:
-            raise HTTPException(400, "Ange ids eller county")
+            raise HTTPException(400, "Ange ids, county eller kind")
         n = 0
         for cam in s.scalars(stmt):
+            if body.kind is not None and cameras.camera_kind(cam.type) != body.kind:
+                continue
             cam.enabled = body.enabled
             n += 1
     if body.enabled:

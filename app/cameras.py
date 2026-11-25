@@ -14,6 +14,19 @@ RESOLUTION_MODES = ("default", "high", "low")
 BYTES_LOW = 27_000
 BYTES_HIGH = 145_000
 
+# Trafikverket's camera types ("Trafikflödeskamera", "Väglagskamera") as short keys
+KINDS = ("flow", "road")
+
+
+def camera_kind(type_: str | None) -> str:
+    """'flow' for traffic flow cameras, 'road' for road condition cameras, '' otherwise."""
+    t = (type_ or "").lower()
+    if "flöde" in t:
+        return "flow"
+    if "väglag" in t:
+        return "road"
+    return ""
+
 
 def wants_temp_overlay(cam: Camera, settings: Settings) -> bool:
     if cam.temp_overlay_mode == "on":

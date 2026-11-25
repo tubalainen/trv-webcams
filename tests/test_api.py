@@ -15,13 +15,14 @@ def _client(settings):
             Camera(
                 id="CAM_1",
                 name="Göteborg E6",
+                type="Trafikflödeskamera",
                 county_no=14,
                 lat=57.7,
                 lon=11.9,
                 photo_url="https://img.example/1.jpg",
             )
         )
-        s.add(Camera(id="CAM_2", name="Kiruna", county_no=25, lat=67.8, lon=20.2))
+        s.add(Camera(id="CAM_2", name="Kiruna", type="Väglagskamera", county_no=25, lat=67.8, lon=20.2))
     return TestClient(create_app())
 
 
@@ -44,6 +45,12 @@ def test_api_flow(settings):
         assert c.patch("/api/cameras/CAM_1", json={"resolution_mode": "4k"}).status_code == 400
         assert [x["id"] for x in c.get("/api/cameras", params={"enabled": True}).json()] == ["CAM_1"]
         assert c.post("/api/cameras/bulk", json={"county": 25, "enabled": True}).json() == {"updated": 1}
+        assert [x["kind"] for x in c.get("/api/cameras").json()] == ["flow", "road"]
+        assert c.post("/api/cameras/bulk", json={"kind": "road", "enabled": False}).json() == {"updated": 1}
+        r = c.post("/api/cameras/bulk", json={"county": 25, "kind": "flow", "enabled": True})
+        assert r.json() == {"updated": 0}
+        assert c.post("/api/cameras/bulk", json={"county": 25, "enabled": True}).json() == {"updated": 1}
+        assert c.post("/api/cameras/bulk", json={"kind": "bus", "enabled": True}).status_code == 400
 
         detail = c.get("/api/cameras/CAM_1").json()
         assert detail["clip_count"] == 0 and detail["enabled"] is True
