@@ -112,3 +112,17 @@ async def test_probe_fullsize_and_collect_in_full_size(settings):
     assert await collector.collect_once(settings) == 1
     saved = list((settings.snapshot_dir / "CAM_1").glob("*/*.jpg"))
     assert cameras.jpeg_size(saved[0].read_bytes()) == (1920, 1080)
+
+
+@pytest.mark.parametrize(
+    "type_, expected",
+    [
+        ("Trafikflödeskamera", "flow"),
+        ("Väglagskamera", "road"),
+        ("VÄGLAGSKAMERA", "road"),
+        ("", ""),
+        (None, ""),
+    ],
+)
+def test_camera_kind(type_, expected):
+    assert cameras.camera_kind(type_) == expected

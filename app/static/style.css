@@ -1,10 +1,12 @@
 :root {
   --bg: #f6f8fa; --panel: #fff; --text: #1f2328; --muted: #656d76; --border: #d0d7de;
   --accent: #1f6feb; --on: #2ea043; --warn: #cf222e; --tab: #eef1f4; --caution: #9a6700;
+  --flow: #1f6feb; --road: #c35f00;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #0d1117; --panel: #161b22; --text: #e6edf3; --muted: #8d96a0; --border: #30363d;
-    --accent: #4493f8; --tab: #21262d; --caution: #d29922; }
+    --accent: #4493f8; --tab: #21262d; --caution: #d29922;
+    --flow: #2f6fd6; --road: #b85a00; }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -40,6 +42,13 @@ a { color: var(--accent); }
   padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); display: flex; gap: 12px; font-size: .85em; }
 .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; vertical-align: -1px; }
 .dot.on { background: var(--on); } .dot.off { background: #9aa4af; }
+.dot.kind-flow { background: var(--flow); } .dot.kind-road { background: var(--road); }
+.dot.big { background: var(--muted); border: 2px solid var(--text); }
+.dot.small { width: 8px; height: 8px; background: color-mix(in srgb, var(--muted) 40%, transparent);
+  border: 1px solid var(--muted); vertical-align: 0; }
+.kind-tag { display: inline-block; padding: 0 6px; border-radius: 999px; font-size: .78em; line-height: 1.5;
+  vertical-align: 1px; font-weight: 600; color: #fff; background: var(--muted); }
+.kind-tag.kind-flow { background: var(--flow); } .kind-tag.kind-road { background: var(--road); }
 
 .popup img { display: block; width: 240px; max-width: 100%; margin: 6px 0; border-radius: 4px; background: #ccc; aspect-ratio: 16/9; object-fit: cover; }
 .popup-actions { display: flex; gap: 6px; }

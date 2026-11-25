@@ -7,6 +7,7 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 | Version | Datum | Issue | PR | Ändring |
 |---------|-------|-------|----|---------|
+| 0.1.13 | 2026-11-25 | #39 | #40 | Översikt: trafikflödes- och väglagskameror har olika färg på kartan och en typetikett i listan och pop-kortet, filter "Alla typer", och "Aktivera/Avaktivera alla" gäller vald typ, valt län eller båda (`kind` i `POST /api/cameras/bulk`) |
 | 0.1.12 | 2026-11-21 | #37 | #38 | Lagring: nytt kort "Ta bort alla klipp" (alla kameror eller en), `DELETE /api/admin/clips`, förhandsräkningen visar när det äldsta klippet skapades, och "äldre än" räknas från midnatt i `TIMEZONE` |
 | – | 2026-11-21 | #36 | #35 | MIT-licens: `LICENSE`, `pyproject.toml`, image-etikett och avsnitt i README |
 | – | 2026-11-20 | #34 | #35 | README: hur man registrerar sig och skapar en API-nyckel i Trafikverkets datautbytesportal |
@@ -127,6 +128,8 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
   `clips` och `batches`.
 
 ## Bra att veta
+
+- **Kameratyp (0.1.13):** Trafikverkets `Type` är "Trafikflödeskamera" eller "Väglagskamera". `cameras.camera_kind` gör om den till `flow`/`road` (`''` för annat), och `/api/cameras` skickar den som `kind`. Färger: trafikflöde blått, väglag orange (`KINDS` i `app.js`, `--flow`/`--road` i `style.css`). Aktiva markörer är större och fyllda, inaktiva små och halvgenomskinliga.
 
 - Användarens server: `/opt/trv-webcams`. Den kör `ghcr.io/tubalainen/trv-webcams:latest`
   via compose med NVIDIA-GPU (`deploy`-blocket), och kodaren `h264_nvenc` fungerar där.
