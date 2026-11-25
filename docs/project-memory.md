@@ -129,7 +129,7 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 ## Bra att veta
 
-- **Kameratyp (0.1.13):** Trafikverkets `Type` är "Trafikflödeskamera" eller "Väglagskamera". `cameras.camera_kind` gör om den till `flow`/`road` (`''` för annat), och `/api/cameras` skickar den som `kind`. Färger: trafikflöde blått, väglag orange (`KINDS` i `app.js`, `--flow`/`--road` i `style.css`). Aktiva markörer är större och fyllda, inaktiva små och halvgenomskinliga.
+- **Kameratyp (0.1.13):** Trafikverkets `Type` är "Trafikflödeskamera" eller "Väglagskamera". `cameras.camera_kind` gör om den till `flow`/`road` (`''` för annat), och `/api/cameras` skickar den som `kind`. Färger: trafikflöde blått, väglag orange (`KINDS` i `app.js`, `--flow`/`--road` i `style.css`). Aktiva markörer är större och fyllda, inaktiva små och halvgenomskinliga. Användaren har bekräftat 2026-11-25 på sin server (riktiga data från Trafikverket) att färgerna fungerar, alltså att typnamnen stämmer.
 
 - Användarens server: `/opt/trv-webcams`. Den kör `ghcr.io/tubalainen/trv-webcams:latest`
   via compose med NVIDIA-GPU (`deploy`-blocket), och kodaren `h264_nvenc` fungerar där.
