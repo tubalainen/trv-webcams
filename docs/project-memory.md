@@ -7,7 +7,7 @@ veta. Nyaste överst i varje avsnitt. Uppdateras i samma PR som ändringen.
 
 | Version | Datum | Issue | PR | Ändring |
 |---------|-------|-------|----|---------|
-| 0.1.13 | 2026-11-25 | #39 | – | Översikt: trafikflödes- och väglagskameror har olika färg på kartan och en typetikett i listan och pop-kortet, filter "Alla typer", och "Aktivera/Avaktivera alla" gäller vald typ, valt län eller båda (`kind` i `POST /api/cameras/bulk`) |
+| 0.1.13 | 2026-11-25 | #39 | #40 | Översikt: trafikflödes- och väglagskameror har olika färg på kartan och en typetikett i listan och pop-kortet, filter "Alla typer", och "Aktivera/Avaktivera alla" gäller vald typ, valt län eller båda (`kind` i `POST /api/cameras/bulk`) |
 | 0.1.12 | 2026-11-21 | #37 | #38 | Lagring: nytt kort "Ta bort alla klipp" (alla kameror eller en), `DELETE /api/admin/clips`, förhandsräkningen visar när det äldsta klippet skapades, och "äldre än" räknas från midnatt i `TIMEZONE` |
 | – | 2026-11-21 | #36 | #35 | MIT-licens: `LICENSE`, `pyproject.toml`, image-etikett och avsnitt i README |
 | – | 2026-11-20 | #34 | #35 | README: hur man registrerar sig och skapar en API-nyckel i Trafikverkets datautbytesportal |
